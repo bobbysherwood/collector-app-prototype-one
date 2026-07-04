@@ -23,9 +23,15 @@ import {
   isPasswordValid,
   validateSignUpFields,
 } from "@/lib/password-validation";
+import {
+  ACTIVATION_CODE_LENGTH,
+  isActivationCodeFormatValid,
+  normalizeActivationCode,
+} from "@/lib/activation-code";
 import { cn } from "@/lib/utils";
 
 export default function SignUpPage() {
+  const [activationCode, setActivationCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [emailConfirm, setEmailConfirm] = useState("");
@@ -43,6 +49,7 @@ export default function SignUpPage() {
   const passwordsMatch =
     passwordConfirm.length > 0 && password === passwordConfirm;
   const passwordValid = isPasswordValid(password);
+  const activationCodeValid = isActivationCodeFormatValid(activationCode);
   const displayNameValid = displayName.trim().length >= 2;
   const emailFormatValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
@@ -54,6 +61,7 @@ export default function SignUpPage() {
 
   const canSubmit = useMemo(() => {
     if (
+      !activationCodeValid ||
       !displayNameValid ||
       !emailFormatValid ||
       !emailConfirm ||
@@ -71,6 +79,7 @@ export default function SignUpPage() {
       !loading
     );
   }, [
+    activationCodeValid,
     displayNameValid,
     emailFormatValid,
     emailConfirm,
@@ -104,9 +113,15 @@ export default function SignUpPage() {
       return;
     }
 
+    if (!activationCodeValid) {
+      setError("Enter a valid 4-digit activation code.");
+      return;
+    }
+
     setLoading(true);
 
     const formData = new FormData();
+    formData.append("activation_code", normalizeActivationCode(activationCode));
     formData.append("display_name", displayName.trim());
     formData.append("email", email.trim());
     formData.append("email_confirm", emailConfirm.trim());
@@ -128,7 +143,7 @@ export default function SignUpPage() {
         </div>
         <CardTitle className="text-xl">Create account</CardTitle>
         <CardDescription>
-          Start tracking your card portfolio
+          Enter your activation code to start tracking your card portfolio
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -258,6 +273,35 @@ export default function SignUpPage() {
             )}
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="activation_code">Activation Code *</Label>
+            <Input
+              id="activation_code"
+              name="activation_code"
+              type="text"
+              required
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={ACTIVATION_CODE_LENGTH}
+              placeholder="4-digit code"
+              value={activationCode}
+              onChange={(e) =>
+                setActivationCode(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
+              aria-invalid={activationCode.length > 0 && !activationCodeValid}
+              className={cn(
+                activationCode.length > 0 &&
+                  !activationCodeValid &&
+                  "border-destructive aria-invalid:border-destructive"
+              )}
+            />
+            {activationCode.length > 0 && !activationCodeValid && (
+              <p className="text-xs text-destructive">
+                Activation code must be exactly 4 digits.
+              </p>
+            )}
+          </div>
+
           <Button type="submit" size="lg" className="w-full" disabled={!canSubmit}>
             {loading ? "Creating account..." : "Create account"}
           </Button>
@@ -265,7 +309,9 @@ export default function SignUpPage() {
             <p className="text-xs text-center text-muted-foreground">
               {emailStatus === "checking" || displayNameStatus === "checking"
                 ? "Checking availability..."
-                : !displayNameValid
+                : !activationCodeValid
+                  ? "Enter a valid 4-digit activation code."
+                  : !displayNameValid
                   ? "Enter a display name (at least 2 characters)."
                   : !emailFormatValid
                     ? "Enter a valid email address."

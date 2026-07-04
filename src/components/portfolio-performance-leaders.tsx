@@ -23,23 +23,27 @@ export function PortfolioPerformanceLeaders({
   underperformers,
 }: PortfolioPerformanceLeadersProps) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <PerformanceCard
-        title="Top Performers"
-        subtitle="Largest % gain vs cost basis"
-        icon={<TrendingUp className="h-4 w-4 text-primary" />}
-        entries={topPerformers}
-        positive
-        emptyMessage="No valued cards yet. Set current values to see top performers."
-      />
-      <PerformanceCard
-        title="Underperformers"
-        subtitle="Largest % loss vs cost basis"
-        icon={<TrendingDown className="h-4 w-4 text-destructive" />}
-        entries={underperformers}
-        positive={false}
-        emptyMessage="No valued cards yet. Set current values to see underperformers."
-      />
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div className="min-w-0 lg:col-span-6">
+        <PerformanceCard
+          title="Top Performers"
+          subtitle="Largest % gain vs cost basis"
+          icon={<TrendingUp className="h-4 w-4 text-primary" />}
+          entries={topPerformers}
+          positive
+          emptyMessage="No cards with gains yet. Set current values to see top performers."
+        />
+      </div>
+      <div className="min-w-0 lg:col-span-6">
+        <PerformanceCard
+          title="Underperformers"
+          subtitle="Largest % loss vs cost basis"
+          icon={<TrendingDown className="h-4 w-4 text-destructive" />}
+          entries={underperformers}
+          positive={false}
+          emptyMessage="No cards with losses yet. Set current values to see underperformers."
+        />
+      </div>
     </div>
   );
 }
@@ -60,7 +64,7 @@ function PerformanceCard({
   emptyMessage: string;
 }) {
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <div className="flex items-center gap-2">
           {icon}

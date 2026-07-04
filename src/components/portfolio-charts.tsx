@@ -32,7 +32,7 @@ import {
   type TimeRangeKey,
   buildPortfolioHistory,
   buildSportAllocation,
-  getPeriodSummaryFromHistory,
+  getPeriodSummary,
   sportColor,
 } from "@/lib/portfolio-history";
 import { buildLatestValuationMap } from "@/lib/valuations";
@@ -109,11 +109,10 @@ export function PortfolioCharts({
     [cards, valuations, timeRange]
   );
 
-  const periodSummary = useMemo(() => {
-    const periodLabel =
-      TIME_RANGES.find((range) => range.key === timeRange)?.label ?? timeRange;
-    return getPeriodSummaryFromHistory(history, periodLabel);
-  }, [history, timeRange]);
+  const periodSummary = useMemo(
+    () => getPeriodSummary(cards, valuations, timeRange),
+    [cards, valuations, timeRange]
+  );
 
   const latestValuationMap = useMemo(
     () => buildLatestValuationMap(valuations),
@@ -158,8 +157,8 @@ export function PortfolioCharts({
   const showReturns = activeSeries.has("returns");
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
-      <Card className="min-w-0 lg:w-[70%] lg:flex-none">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <Card className="min-w-0 h-full lg:col-span-8">
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base font-medium">
             Portfolio Overview
@@ -182,19 +181,19 @@ export function PortfolioCharts({
             <div className="grid gap-3 sm:grid-cols-3">
               <SummaryTile
                 label="Latest Value"
-                value={formatCurrency(periodSummary.startValue)}
-                subtitle={`${periodSummary.periodLabel} · ${periodSummary.startLabel}`}
+                value={formatCurrency(periodSummary.endValue)}
+                subtitle={`Current · ${periodSummary.endLabel}`}
               />
               <SummaryTile
                 label="Cost Basis"
-                value={formatCurrency(periodSummary.startCostBasis)}
-                subtitle={`${periodSummary.periodLabel} · ${periodSummary.startLabel}`}
+                value={formatCurrency(periodSummary.costBasis)}
+                subtitle={`${periodSummary.periodLabel} · Purchases since ${periodSummary.startLabel}`}
               />
               <SummaryTile
                 label="Returns"
                 value={formatCurrency(periodSummary.returns)}
                 positive={periodSummary.returns >= 0}
-                subtitle={`${periodSummary.periodLabel} · ${periodSummary.startLabel} → ${periodSummary.endLabel}`}
+                subtitle={`${periodSummary.periodLabel} · Value minus period cost`}
               />
             </div>
           )}
@@ -289,7 +288,7 @@ export function PortfolioCharts({
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 lg:w-[30%] lg:flex-none">
+      <Card className="min-w-0 h-full lg:col-span-4">
         <CardHeader>
           <CardTitle className="text-base font-medium">
             Allocation by Sport

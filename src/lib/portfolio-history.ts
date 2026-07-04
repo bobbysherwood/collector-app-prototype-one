@@ -142,27 +142,68 @@ export function getPortfolioSnapshotAt(
   };
 }
 
-export function getPeriodSummaryFromHistory(
-  history: PortfolioHistoryPoint[],
-  periodLabel: string
+export function getPeriodSummary(
+  cards: Card[],
+  valuations: CardValuation[],
+  range: TimeRangeKey,
+  now = new Date()
 ): PeriodSummary | null {
-  if (!history.length) return null;
+  if (cards.length === 0) return null;
 
-  const start = history[0];
-  const end = history[history.length - 1];
+  const rangeStart = getRangeStart(range, cards, now);
+  const current = getPortfolioSnapshotAt(cards, valuations, now);
+  const periodCostBasis = getCostBasisForPurchasesInRange(cards, rangeStart, now);
+  const periodLabel =
+    TIME_RANGES.find((entry) => entry.key === range)?.label ?? range;
+
+  const latestValue = current.value;
+  const returns = Math.round((latestValue - periodCostBasis) * 100) / 100;
 
   return {
-    value: start.value,
-    costBasis: start.costBasis,
-    returns: Math.round((end.value - start.value) * 100) / 100,
+    value: latestValue,
+    costBasis: periodCostBasis,
+    returns,
     periodLabel,
-    startLabel: start.label,
-    endLabel: end.label,
-    startValue: start.value,
-    startCostBasis: start.costBasis,
-    endValue: end.value,
-    endCostBasis: end.costBasis,
+    startLabel: formatMonthLabel(rangeStart),
+    endLabel: formatMonthLabel(now),
+    startValue: latestValue,
+    startCostBasis: periodCostBasis,
+    endValue: latestValue,
+    endCostBasis: periodCostBasis,
   };
+}
+
+function getCostBasisForPurchasesInRange(
+  cards: Card[],
+  rangeStart: Date,
+  now: Date
+): number {
+  const start = new Date(
+    rangeStart.getFullYear(),
+    rangeStart.getMonth(),
+    rangeStart.getDate(),
+    0,
+    0,
+    0
+  );
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59
+  );
+
+  let total = 0;
+
+  for (const card of cards) {
+    const purchased = new Date(`${card.purchase_date}T12:00:00`);
+    if (purchased < start || purchased > end) continue;
+    total += cardCostBasis(card);
+  }
+
+  return Math.round(total * 100) / 100;
 }
 
 function valuationAtDate(
