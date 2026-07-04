@@ -46,10 +46,12 @@ export function buildCardPerformanceLeaders(
   }
 
   const topPerformers = [...performances]
+    .filter((p) => p.gainPercent > 0)
     .sort((a, b) => b.gainPercent - a.gainPercent)
     .slice(0, limit);
 
   const underperformers = [...performances]
+    .filter((p) => p.gainPercent < 0)
     .sort((a, b) => a.gainPercent - b.gainPercent)
     .slice(0, limit);
 

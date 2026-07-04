@@ -4,15 +4,28 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateSignUpFields } from "@/lib/password-validation";
 import { checkSignUpAvailability } from "@/app/actions/signup-validation";
+import {
+  consumeActivationCode,
+  validateActivationCodeForSignUp,
+} from "@/app/actions/activation-code";
+import { ACTIVATION_CODE_ERROR, normalizeActivationCode } from "@/lib/activation-code";
 
 export async function signUp(formData: FormData) {
   const supabase = await createClient();
 
+  const activationCode = normalizeActivationCode(
+    (formData.get("activation_code") as string) ?? ""
+  );
   const email = (formData.get("email") as string)?.trim();
   const emailConfirm = (formData.get("email_confirm") as string)?.trim();
   const password = formData.get("password") as string;
   const passwordConfirm = formData.get("password_confirm") as string;
   const displayName = (formData.get("display_name") as string)?.trim();
+
+  const activationError = await validateActivationCodeForSignUp(activationCode);
+  if (activationError) {
+    return { error: activationError };
+  }
 
   if (!displayName || displayName.length < 2) {
     return { error: "Display name must be at least 2 characters." };
@@ -42,7 +55,7 @@ export async function signUp(formData: FormData) {
     return { error: "This display name is already taken." };
   }
 
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -55,6 +68,15 @@ export async function signUp(formData: FormData) {
       return { error: "An account with this email already exists." };
     }
     return { error: error.message };
+  }
+
+  if (!data.user) {
+    return { error: "Account could not be created. Please try again." };
+  }
+
+  const consumed = await consumeActivationCode(activationCode, data.user.id);
+  if (!consumed) {
+    return { error: ACTIVATION_CODE_ERROR };
   }
 
   redirect("/dashboard");
