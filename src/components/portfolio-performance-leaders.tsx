@@ -9,13 +9,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { CardPerformance } from "@/types/card";
-import { cardTitle, formatCurrency, formatPercent } from "@/types/card";
+import type { LotPerformance } from "@/types/card";
+import { cardTitle, formatCurrency, formatPercent, gradeLabel } from "@/types/card";
 import { cn } from "@/lib/utils";
 
 interface PortfolioPerformanceLeadersProps {
-  topPerformers: CardPerformance[];
-  underperformers: CardPerformance[];
+  topPerformers: LotPerformance[];
+  underperformers: LotPerformance[];
 }
 
 export function PortfolioPerformanceLeaders({
@@ -31,7 +31,7 @@ export function PortfolioPerformanceLeaders({
           icon={<TrendingUp className="h-4 w-4 text-primary" />}
           entries={topPerformers}
           positive
-          emptyMessage="No cards with gains yet. Set current values to see top performers."
+          emptyMessage="No lots with gains yet. Set current values to see top performers."
         />
       </div>
       <div className="min-w-0 lg:col-span-6">
@@ -41,7 +41,7 @@ export function PortfolioPerformanceLeaders({
           icon={<TrendingDown className="h-4 w-4 text-destructive" />}
           entries={underperformers}
           positive={false}
-          emptyMessage="No cards with losses yet. Set current values to see underperformers."
+          emptyMessage="No lots with losses yet. Set current values to see underperformers."
         />
       </div>
     </div>
@@ -59,7 +59,7 @@ function PerformanceCard({
   title: string;
   subtitle: string;
   icon: React.ReactNode;
-  entries: CardPerformance[];
+  entries: LotPerformance[];
   positive: boolean;
   emptyMessage: string;
 }) {
@@ -83,28 +83,28 @@ function PerformanceCard({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Card</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-                <TableHead className="text-right">Value</TableHead>
+                <TableHead>Lot</TableHead>
+                <TableHead className="text-right">Cost Basis</TableHead>
+                <TableHead className="text-right">Current Value</TableHead>
                 <TableHead className="text-right">Change</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {entries.map((entry, index) => (
-                <TableRow key={entry.card.id}>
+                <TableRow key={entry.lot.id}>
                   <TableCell>
                     <Link
-                      href={`/cards/${entry.card.id}`}
+                      href={`/cards/${entry.asset.id}`}
                       className="block min-w-0 hover:text-primary transition-colors"
                     >
                       <p className="font-medium truncate max-w-[180px] sm:max-w-none">
                         <span className="text-muted-foreground mr-1.5 tabular-nums">
                           {index + 1}.
                         </span>
-                        {cardTitle(entry.card)}
+                        {cardTitle(entry.asset)}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {entry.card.sport}
+                        {entry.asset.sport} · {gradeLabel(entry.lot)}
                       </p>
                     </Link>
                   </TableCell>

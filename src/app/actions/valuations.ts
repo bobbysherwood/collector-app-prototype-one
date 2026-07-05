@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-export async function addCardValuation(
-  cardId: string,
+export async function addLotValuation(
+  lotId: string,
   value: number
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
@@ -20,19 +20,19 @@ export async function addCardValuation(
     return { error: "Value must be a positive number." };
   }
 
-  const { data: card } = await supabase
-    .from("cards")
-    .select("id")
-    .eq("id", cardId)
+  const { data: lot } = await supabase
+    .from("lots")
+    .select("id, asset_id")
+    .eq("id", lotId)
     .eq("user_id", user.id)
     .single();
 
-  if (!card) {
-    return { error: "Card not found." };
+  if (!lot) {
+    return { error: "Lot not found." };
   }
 
   const { error } = await supabase.from("card_valuations").insert({
-    card_id: cardId,
+    lot_id: lotId,
     user_id: user.id,
     value,
     recorded_at: new Date().toISOString(),
@@ -43,20 +43,28 @@ export async function addCardValuation(
   }
 
   revalidatePath("/dashboard");
-  revalidatePath("/collection");
-  revalidatePath(`/cards/${cardId}`);
+  revalidatePath("/holdings");
+  revalidatePath(`/cards/${lot.asset_id}`);
   return {};
 }
 
+/** @deprecated Use addLotValuation */
+export async function addCardValuation(
+  lotId: string,
+  value: number
+): Promise<{ error?: string }> {
+  return addLotValuation(lotId, value);
+}
+
 export async function insertInitialValuation(
-  cardId: string,
+  lotId: string,
   userId: string,
   value: number
 ) {
   const supabase = await createClient();
 
   await supabase.from("card_valuations").insert({
-    card_id: cardId,
+    lot_id: lotId,
     user_id: userId,
     value,
     recorded_at: new Date().toISOString(),

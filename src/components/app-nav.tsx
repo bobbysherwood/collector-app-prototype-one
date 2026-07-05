@@ -36,27 +36,31 @@ export function AppNav({ email, displayName }: AppNavProps) {
             </span>
           </Link>
           <nav className="flex items-center gap-1">
-            <Link href="/dashboard">
-              <Button variant="ghost" className="gap-2">
-                <LayoutDashboard className="h-4 w-4" />
-                <span className="hidden sm:inline">Dashboard</span>
-              </Button>
-            </Link>
-            <Link href="/collection">
-              <Button variant="ghost" className="gap-2">
-                <Layers className="h-4 w-4" />
-                <span className="hidden sm:inline">Collection</span>
-              </Button>
-            </Link>
+            <Button
+              render={<Link href="/dashboard" />}
+              nativeButton={false}
+              variant="ghost"
+              className="gap-2"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </Button>
+            <Button
+              render={<Link href="/holdings" />}
+              nativeButton={false}
+              variant="ghost"
+              className="gap-2"
+            >
+              <Layers className="h-4 w-4" />
+              <span className="hidden sm:inline">Holdings</span>
+            </Button>
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/cards/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Card</span>
-            </Button>
-          </Link>
+          <Button render={<Link href="/cards/new" />} nativeButton={false} className="gap-2">
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Add Asset</span>
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
               className="outline-none"

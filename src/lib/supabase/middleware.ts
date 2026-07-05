@@ -35,9 +35,18 @@ export async function updateSession(request: NextRequest) {
 
   const isProtectedRoute =
     request.nextUrl.pathname.startsWith("/dashboard") ||
-    request.nextUrl.pathname.startsWith("/collection") ||
+    request.nextUrl.pathname.startsWith("/holdings") ||
     request.nextUrl.pathname.startsWith("/cards") ||
     request.nextUrl.pathname.startsWith("/profile");
+
+  if (
+    request.nextUrl.pathname === "/collection" ||
+    request.nextUrl.pathname.startsWith("/collection/")
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/holdings";
+    return NextResponse.redirect(url);
+  }
 
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone();

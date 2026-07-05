@@ -1,16 +1,10 @@
-import type { Card, CardValuation } from "@/types/card";
-import { cardCostBasis, cardMarketValue, cardWasHeldAt } from "@/types/card";
-
-export interface CardSale {
-  id: string;
-  card_id: string | null;
-  user_id: string;
-  sale_date: string;
-  sale_price: number;
-  quantity: number;
-  notes: string | null;
-  created_at: string;
-}
+import type { CardValuation, Lot } from "@/types/card";
+import {
+  filterHeldLots,
+  filterHeldPositions,
+  type AssetPosition,
+  type HeldLotPosition,
+} from "@/types/card";
 
 export type TimeRangeKey = "ytd" | "1y" | "3y" | "5y" | "10y" | "max";
 
@@ -26,9 +20,7 @@ export const TIME_RANGES: { key: TimeRangeKey; label: string }[] = [
 export interface PortfolioHistoryPoint {
   date: string;
   label: string;
-  value: number;
   returns: number;
-  costBasis: number;
 }
 
 export interface SportAllocationSlice {
@@ -42,7 +34,7 @@ export interface SportAllocationSlice {
 
 function getRangeStart(
   range: TimeRangeKey,
-  cards: Card[],
+  heldLots: Lot[],
   now = new Date()
 ): Date {
   const end = new Date(now);
@@ -70,9 +62,9 @@ function getRangeStart(
       return d;
     }
     case "max": {
-      if (cards.length === 0) return new Date(end.getFullYear() - 1, 0, 1);
+      if (heldLots.length === 0) return new Date(end.getFullYear() - 1, 0, 1);
       const earliest = Math.min(
-        ...cards.map((c) => new Date(`${c.purchase_date}T12:00:00`).getTime())
+        ...heldLots.map((l) => new Date(`${l.purchase_date}T12:00:00`).getTime())
       );
       return new Date(earliest);
     }
@@ -99,122 +91,21 @@ function formatMonthLabel(date: Date): string {
 }
 
 export interface PeriodSummary {
-  value: number;
-  costBasis: number;
   returns: number;
   periodLabel: string;
-  startLabel: string;
-  endLabel: string;
-  startValue: number;
-  startCostBasis: number;
-  endValue: number;
-  endCostBasis: number;
-}
-
-export function getPortfolioSnapshotAt(
-  cards: Card[],
-  valuations: CardValuation[],
-  asOf: Date
-): { value: number; costBasis: number; returns: number } {
-  let value = 0;
-  let costBasis = 0;
-
-  for (const card of cards) {
-    const purchased = new Date(`${card.purchase_date}T12:00:00`);
-    if (purchased > asOf) continue;
-    if (!cardWasHeldAt(card, asOf)) continue;
-
-    const basis = cardCostBasis(card);
-    costBasis += basis;
-
-    const unitValue =
-      valuationAtDate(valuations, card.id, asOf) ?? card.purchase_price;
-    value += cardMarketValue(unitValue, card.quantity);
-  }
-
-  const roundedValue = Math.round(value * 100) / 100;
-  const roundedCostBasis = Math.round(costBasis * 100) / 100;
-
-  return {
-    value: roundedValue,
-    costBasis: roundedCostBasis,
-    returns: Math.round((roundedValue - roundedCostBasis) * 100) / 100,
-  };
-}
-
-export function getPeriodSummary(
-  cards: Card[],
-  valuations: CardValuation[],
-  range: TimeRangeKey,
-  now = new Date()
-): PeriodSummary | null {
-  if (cards.length === 0) return null;
-
-  const rangeStart = getRangeStart(range, cards, now);
-  const current = getPortfolioSnapshotAt(cards, valuations, now);
-  const periodCostBasis = getCostBasisForPurchasesInRange(cards, rangeStart, now);
-  const periodLabel =
-    TIME_RANGES.find((entry) => entry.key === range)?.label ?? range;
-
-  const latestValue = current.value;
-  const returns = Math.round((latestValue - periodCostBasis) * 100) / 100;
-
-  return {
-    value: latestValue,
-    costBasis: periodCostBasis,
-    returns,
-    periodLabel,
-    startLabel: formatMonthLabel(rangeStart),
-    endLabel: formatMonthLabel(now),
-    startValue: latestValue,
-    startCostBasis: periodCostBasis,
-    endValue: latestValue,
-    endCostBasis: periodCostBasis,
-  };
-}
-
-function getCostBasisForPurchasesInRange(
-  cards: Card[],
-  rangeStart: Date,
-  now: Date
-): number {
-  const start = new Date(
-    rangeStart.getFullYear(),
-    rangeStart.getMonth(),
-    rangeStart.getDate(),
-    0,
-    0,
-    0
-  );
-  const end = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    59
-  );
-
-  let total = 0;
-
-  for (const card of cards) {
-    const purchased = new Date(`${card.purchase_date}T12:00:00`);
-    if (purchased < start || purchased > end) continue;
-    total += cardCostBasis(card);
-  }
-
-  return Math.round(total * 100) / 100;
+  /** Annualized rate of return (%), or null when unavailable (YTD or < 12 months). */
+  rateOfReturn: number | null;
 }
 
 function valuationAtDate(
   valuations: CardValuation[],
-  cardId: string,
+  lotId: string,
   asOf: Date
 ): number | null {
   let latest: CardValuation | null = null;
 
   for (const v of valuations) {
-    if (v.card_id !== cardId) continue;
+    if (v.lot_id !== lotId) continue;
     const recorded = new Date(v.recorded_at);
     if (recorded > asOf) continue;
     if (
@@ -228,46 +119,235 @@ function valuationAtDate(
   return latest?.value ?? null;
 }
 
-export function buildPortfolioHistory(
-  cards: Card[],
+function formatDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function endOfDay(date: Date): Date {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+}
+
+function periodStartKey(periodStart: Date): string {
+  return formatDateKey(periodStart);
+}
+
+/**
+ * Asset gains for currently held lots from periodStart through asOf.
+ * Lots acquired during the period contribute (current value − purchase cost).
+ * Lots held at period start contribute (current value − value at period start).
+ * Sold lots are excluded (only filterHeldPositions).
+ */
+export function getPeriodReturns(
+  positions: AssetPosition[],
   valuations: CardValuation[],
+  periodStart: Date,
+  asOf: Date
+): number {
+  const heldPositions = filterHeldPositions(positions);
+  const startKey = periodStartKey(periodStart);
+  const asOfEnd = endOfDay(asOf);
+  const asOfKey = formatDateKey(asOfEnd);
+  const periodStartEnd = endOfDay(periodStart);
+  let total = 0;
+
+  for (const { lots } of heldPositions) {
+    for (const lot of lots) {
+      if (lot.purchase_date > asOfKey) continue;
+
+      const endVal =
+        valuationAtDate(valuations, lot.id, asOfEnd) ?? lot.unit_cost;
+
+      if (lot.purchase_date > startKey) {
+        total += endVal - lot.unit_cost;
+      } else {
+        const startVal =
+          valuationAtDate(valuations, lot.id, periodStartEnd) ?? lot.unit_cost;
+        total += endVal - startVal;
+      }
+    }
+  }
+
+  return Math.round(total * 100) / 100;
+}
+
+function annualizationMonths(
+  range: TimeRangeKey,
+  periodStart: Date,
+  asOf: Date
+): number {
+  switch (range) {
+    case "1y":
+      return 12;
+    case "3y":
+      return 36;
+    case "5y":
+      return 60;
+    case "10y":
+      return 120;
+    default:
+      return monthsInPeriod(periodStart, asOf);
+  }
+}
+
+/**
+ * Capital base for rate-of-return: value at period start for lots held then,
+ * plus purchase cost for lots acquired during the period.
+ */
+function getPeriodCapitalBase(
+  positions: AssetPosition[],
+  valuations: CardValuation[],
+  periodStart: Date,
+  asOf: Date
+): number {
+  const heldPositions = filterHeldPositions(positions);
+  const startKey = periodStartKey(periodStart);
+  const asOfEnd = endOfDay(asOf);
+  const asOfKey = formatDateKey(asOfEnd);
+  const periodStartEnd = endOfDay(periodStart);
+  let total = 0;
+
+  for (const { lots } of heldPositions) {
+    for (const lot of lots) {
+      if (lot.purchase_date > asOfKey) continue;
+
+      if (lot.purchase_date > startKey) {
+        total += lot.unit_cost;
+      } else {
+        total +=
+          valuationAtDate(valuations, lot.id, periodStartEnd) ?? lot.unit_cost;
+      }
+    }
+  }
+
+  return Math.round(total * 100) / 100;
+}
+
+const MIN_RATE_OF_RETURN_MONTHS = 12;
+
+/** Fixed ranges span full years; "max" needs 12+ calendar months of history. */
+function meetsRateOfReturnMinimum(
+  range: TimeRangeKey,
+  periodStart: Date,
+  asOf: Date
+): boolean {
+  if (range === "ytd") return false;
+  if (range === "1y" || range === "3y" || range === "5y" || range === "10y") {
+    return true;
+  }
+  const calendarMonths =
+    (asOf.getFullYear() - periodStart.getFullYear()) * 12 +
+    (asOf.getMonth() - periodStart.getMonth());
+  return calendarMonths >= MIN_RATE_OF_RETURN_MONTHS;
+}
+
+/** Months elapsed between two dates (fractional, for annualization). */
+function monthsInPeriod(start: Date, end: Date): number {
+  const msPerMonth = (365.25 / 12) * 24 * 60 * 60 * 1000;
+  return (end.getTime() - start.getTime()) / msPerMonth;
+}
+
+/**
+ * Annualized rate of return for the selected period.
+ * Returns null for YTD, periods shorter than 12 months, or zero capital base.
+ */
+export function getPeriodRateOfReturn(
+  positions: AssetPosition[],
+  valuations: CardValuation[],
+  range: TimeRangeKey,
+  periodStart: Date,
+  asOf: Date,
+  periodReturns: number
+): number | null {
+  if (!meetsRateOfReturnMinimum(range, periodStart, asOf)) return null;
+
+  const months = annualizationMonths(range, periodStart, asOf);
+
+  const capitalBase = getPeriodCapitalBase(
+    positions,
+    valuations,
+    periodStart,
+    asOf
+  );
+  if (capitalBase <= 0) return null;
+
+  const periodRate = periodReturns / capitalBase;
+  const annualized = (Math.pow(1 + periodRate, 12 / months) - 1) * 100;
+
+  return Math.round(annualized * 10) / 10;
+}
+
+export function getPeriodSummary(
+  positions: AssetPosition[],
+  valuations: CardValuation[],
+  lots: Lot[],
+  range: TimeRangeKey,
+  now = new Date()
+): PeriodSummary | null {
+  const heldPositions = filterHeldPositions(positions);
+  if (heldPositions.length === 0) return null;
+
+  const rangeStart = getRangeStart(range, filterHeldLots(lots), now);
+  const periodLabel =
+    TIME_RANGES.find((entry) => entry.key === range)?.label ?? range;
+  const returns = getPeriodReturns(heldPositions, valuations, rangeStart, now);
+
+  return {
+    returns,
+    periodLabel,
+    rateOfReturn: getPeriodRateOfReturn(
+      heldPositions,
+      valuations,
+      range,
+      rangeStart,
+      now,
+      returns
+    ),
+  };
+}
+
+export function buildPortfolioHistory(
+  positions: AssetPosition[],
+  valuations: CardValuation[],
+  lots: Lot[],
   range: TimeRangeKey,
   now = new Date()
 ): PortfolioHistoryPoint[] {
-  const rangeStart = getRangeStart(range, cards, now);
+  const heldPositions = filterHeldPositions(positions);
+  if (heldPositions.length === 0) return [];
+
+  const heldLots = filterHeldLots(lots);
+  const rangeStart = getRangeStart(range, heldLots, now);
   const monthEnds = monthEndsBetween(rangeStart, now);
 
-  const valuationsByCard = new Map<string, CardValuation[]>();
-  for (const v of valuations) {
-    const list = valuationsByCard.get(v.card_id) ?? [];
-    list.push(v);
-    valuationsByCard.set(v.card_id, list);
-  }
-
   return monthEnds.map((monthEnd) => {
-    const asOf = new Date(
-      monthEnd.getFullYear(),
-      monthEnd.getMonth(),
-      monthEnd.getDate(),
-      23,
-      59,
-      59
-    );
-
-    const snapshot = getPortfolioSnapshotAt(cards, valuations, asOf);
+    const asOf = endOfDay(monthEnd);
 
     return {
       date: monthEnd.toISOString().split("T")[0],
       label: formatMonthLabel(monthEnd),
-      value: snapshot.value,
-      returns: snapshot.returns,
-      costBasis: snapshot.costBasis,
+      returns: getPeriodReturns(
+        heldPositions,
+        valuations,
+        rangeStart,
+        asOf
+      ),
     };
   });
 }
 
 export function buildSportAllocation(
-  cards: Card[],
+  heldLotPositions: HeldLotPosition[],
   latestValuations: Map<string, CardValuation>
 ): SportAllocationSlice[] {
   const sportMap = new Map<
@@ -275,24 +355,24 @@ export function buildSportAllocation(
     { count: number; costBasis: number; currentValue: number }
   >();
 
-  for (const card of cards) {
-    const costBasis = cardCostBasis(card);
-    const latest = latestValuations.get(card.id);
-    const positionValue = latest
-      ? cardMarketValue(latest.value, card.quantity)
-      : null;
+  for (const { asset, lot } of heldLotPositions) {
+    if (lot.quantity_remaining <= 0) continue;
 
-    const existing = sportMap.get(card.sport) ?? {
+    const costBasis = lot.unit_cost;
+    const latest = latestValuations.get(lot.id);
+    const positionValue = latest?.value ?? null;
+
+    const existing = sportMap.get(asset.sport) ?? {
       count: 0,
       costBasis: 0,
       currentValue: 0,
     };
-    existing.count += card.quantity;
+    existing.count += 1;
     existing.costBasis += costBasis;
     if (positionValue != null) {
       existing.currentValue += positionValue;
     }
-    sportMap.set(card.sport, existing);
+    sportMap.set(asset.sport, existing);
   }
 
   const totalForPie = Array.from(sportMap.values()).reduce(
@@ -308,7 +388,10 @@ export function buildSportAllocation(
         sport,
         count: data.count,
         costBasis: Math.round(data.costBasis * 100) / 100,
-        currentValue: data.currentValue > 0 ? Math.round(data.currentValue * 100) / 100 : null,
+        currentValue:
+          data.currentValue > 0
+            ? Math.round(data.currentValue * 100) / 100
+            : null,
         value: Math.round(pieValue * 100) / 100,
         percentage: totalForPie > 0 ? (pieValue / totalForPie) * 100 : 0,
       };

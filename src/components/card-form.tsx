@@ -22,14 +22,15 @@ import {
 import {
   SPORTS,
   GRADERS,
-  GRADED_BY,
   CARD_TYPES,
   GRADES,
+  isGradedGrader,
 } from "@/lib/constants";
-import type { Card, CardFormData, Grader, Sport } from "@/types/card";
+import type { CardFormData, Grader, Sport } from "@/types/card";
 
 interface CardFormProps {
-  card?: Card;
+  card?: import("@/types/asset").Asset;
+  lots?: import("@/types/asset").Lot[];
   mode: "create" | "edit";
 }
 
@@ -45,15 +46,20 @@ const emptyForm: CardFormData = {
   cert_number: "",
   purchase_date: new Date().toISOString().split("T")[0],
   purchase_price: 0,
-  quantity: 1,
   notes: "",
   current_value: "",
 };
 
-export function CardForm({ card, mode }: CardFormProps) {
+export function CardForm({ card, lots = [], mode }: CardFormProps) {
   const router = useRouter();
+  const primaryLot =
+    lots.length === 1
+      ? lots[0]
+      : lots.find((l) => l.quantity_remaining > 0) ?? lots[0];
+  const canEditLotFields = mode === "create" || lots.length === 1;
+
   const [form, setForm] = useState<CardFormData>(
-    card
+    card && primaryLot
       ? {
           player_name: card.player_name,
           year: card.year,
@@ -61,12 +67,12 @@ export function CardForm({ card, mode }: CardFormProps) {
           sport: card.sport,
           card_number: card.card_number ?? "",
           insert_parallel: card.insert_parallel ?? "",
-          grader: card.grader,
-          grade: card.grade ?? "",
-          cert_number: card.cert_number ?? "",
-          purchase_date: card.purchase_date,
-          purchase_price: card.purchase_price,
-          quantity: card.quantity,
+          grader:
+            primaryLot.grader === "Ungraded" ? "Raw" : primaryLot.grader,
+          grade: primaryLot.grade ?? "",
+          cert_number: primaryLot.cert_number ?? "",
+          purchase_date: primaryLot.purchase_date,
+          purchase_price: primaryLot.unit_cost,
           notes: card.notes ?? "",
           current_value: "",
         }
@@ -77,7 +83,7 @@ export function CardForm({ card, mode }: CardFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const isGraded = GRADED_BY.includes(form.grader);
+  const isGraded = isGradedGrader(form.grader);
 
   function updateField<K extends keyof CardFormData>(
     key: K,
@@ -89,6 +95,18 @@ export function CardForm({ card, mode }: CardFormProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (canEditLotFields && isGraded) {
+      if (!form.grade.trim()) {
+        setError("Grade is required for graded cards.");
+        return;
+      }
+      if (!form.cert_number.trim()) {
+        setError("Cert number is required for graded cards.");
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -139,6 +157,13 @@ export function CardForm({ card, mode }: CardFormProps) {
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {mode === "edit" && lots.length > 1 && (
+        <div className="rounded-lg border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          This asset has multiple lots. Edit card identity here; use Add
+          Acquisition on the card detail page to add lots with different grading.
         </div>
       )}
 
@@ -243,119 +268,115 @@ export function CardForm({ card, mode }: CardFormProps) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-sm font-medium">Grading</h3>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Grader *</Label>
-                <Select
-                  value={form.grader}
-                  onValueChange={(v) => {
-                    if (!v) return;
-                    updateField("grader", v as Grader);
-                    if (!GRADED_BY.includes(v as Grader)) {
-                      updateField("grade", "");
-                      updateField("cert_number", "");
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GRADERS.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {canEditLotFields && (
+            <>
+              <div className="rounded-lg border border-border p-4 space-y-4">
+                <h3 className="text-sm font-medium">Grading</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2 sm:max-w-xs">
+                    <Label>Grader *</Label>
+                    <Select
+                      value={form.grader}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        updateField("grader", v as Grader);
+                        if (!isGradedGrader(v as Grader)) {
+                          updateField("grade", "");
+                          updateField("cert_number", "");
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {GRADERS.map((g) => (
+                          <SelectItem key={g} value={g}>
+                            {g}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {isGraded && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Grade *</Label>
+                        <Select
+                          value={form.grade}
+                          onValueChange={(v) => v && updateField("grade", v)}
+                          required
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select grade" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GRADES.map((g) => (
+                              <SelectItem key={g} value={g}>
+                                {g}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="cert_number">Cert Number *</Label>
+                        <Input
+                          id="cert_number"
+                          value={form.cert_number}
+                          onChange={(e) =>
+                            updateField("cert_number", e.target.value)
+                          }
+                          placeholder="e.g. 12345678"
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Grade</Label>
-                <Select
-                  value={form.grade}
-                  onValueChange={(v) => v && updateField("grade", v)}
-                  disabled={!isGraded}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={isGraded ? "Select grade" : "N/A"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GRADES.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="rounded-lg border border-border p-4 space-y-4">
+                <h3 className="text-sm font-medium">Acquisition</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="purchase_date">Purchase Date *</Label>
+                    <Input
+                      id="purchase_date"
+                      type="date"
+                      required
+                      value={form.purchase_date}
+                      onChange={(e) => updateField("purchase_date", e.target.value)}
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="cert_number">Cert Number</Label>
-                <Input
-                  id="cert_number"
-                  value={form.cert_number}
-                  onChange={(e) => updateField("cert_number", e.target.value)}
-                  placeholder="e.g. 12345678"
-                  disabled={!isGraded}
-                />
+                  <div className="space-y-2">
+                    <Label htmlFor="purchase_price">Purchase Price *</Label>
+                    <Input
+                      id="purchase_price"
+                      type="number"
+                      required
+                      min={0}
+                      step="0.01"
+                      value={form.purchase_price || ""}
+                      onChange={(e) =>
+                        updateField("purchase_price", parseFloat(e.target.value) || 0)
+                      }
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-sm font-medium">Acquisition</h3>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="purchase_date">Purchase Date *</Label>
-                <Input
-                  id="purchase_date"
-                  type="date"
-                  required
-                  value={form.purchase_date}
-                  onChange={(e) => updateField("purchase_date", e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="purchase_price">Purchase Price *</Label>
-                <Input
-                  id="purchase_price"
-                  type="number"
-                  required
-                  min={0}
-                  step="0.01"
-                  value={form.purchase_price || ""}
-                  onChange={(e) =>
-                    updateField("purchase_price", parseFloat(e.target.value) || 0)
-                  }
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  required
-                  min={1}
-                  value={form.quantity}
-                  onChange={(e) =>
-                    updateField("quantity", parseInt(e.target.value) || 1)
-                  }
-                />
-              </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {mode === "create" && (
             <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm space-y-4">
               <h3 className="text-sm font-medium">Current Value (optional)</h3>
               <div className="space-y-2">
-                <Label htmlFor="current_value">Estimated value per card</Label>
+                <Label htmlFor="current_value">Estimated value</Label>
                 <Input
                   id="current_value"
                   type="number"

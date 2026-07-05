@@ -10,9 +10,14 @@ export const SPORTS: Sport[] = [
   "Other",
 ];
 
-export const GRADERS: Grader[] = ["PSA", "BGS", "SGC", "CGC", "Raw", "Ungraded"];
+/** Grader options shown in add/edit forms (Ungraded is legacy-only in stored data). */
+export const GRADERS: Grader[] = ["PSA", "BGS", "SGC", "CGC", "Raw"];
 
 export const GRADED_BY: Grader[] = ["PSA", "BGS", "SGC", "CGC"];
+
+export function isGradedGrader(grader: Grader): boolean {
+  return GRADED_BY.includes(grader);
+}
 
 export const CARD_TYPES = [
   "Topps",

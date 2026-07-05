@@ -20,50 +20,89 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { addCardValuation } from "@/app/actions/valuations";
-import type { Card as CardType, CardValuation } from "@/types/card";
+import { addLotValuation } from "@/app/actions/valuations";
+import type { Asset, Lot, CardValuation } from "@/types/card";
 import {
-  cardCostBasis,
-  cardMarketValue,
   formatCurrency,
   formatDateTime,
   formatPercent,
-  isCardHeld,
+  gradeLabel,
   percentChange,
 } from "@/types/card";
+import { groupValuationsByLot } from "@/lib/valuations";
 import { cn } from "@/lib/utils";
 
 interface CardValuationSectionProps {
-  card: CardType;
+  asset: Asset;
+  lots: Lot[];
   valuations: CardValuation[];
 }
 
 export function CardValuationSection({
-  card,
+  asset,
+  lots,
   valuations,
 }: CardValuationSectionProps) {
-  const router = useRouter();
-  const held = isCardHeld(card);
-  const latest = valuations[valuations.length - 1] ?? null;
-  const [value, setValue] = useState(
-    latest ? String(latest.value) : ""
+  const valuationsByLot = groupValuationsByLot(valuations);
+  const heldLots = lots.filter((l) => l.quantity_remaining > 0);
+
+  if (heldLots.length === 0 && valuations.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-6">
+      {heldLots.map((lot) => (
+        <LotValuationPanel
+          key={lot.id}
+          asset={asset}
+          lot={lot}
+          valuations={valuationsByLot.get(lot.id) ?? []}
+        />
+      ))}
+      {heldLots.length === 0 &&
+        lots.map((lot) => {
+          const lotValuations = valuationsByLot.get(lot.id) ?? [];
+          if (lotValuations.length === 0) return null;
+          return (
+            <LotValuationPanel
+              key={lot.id}
+              asset={asset}
+              lot={lot}
+              valuations={lotValuations}
+              readOnly
+            />
+          );
+        })}
+    </div>
   );
+}
+
+function LotValuationPanel({
+  lot,
+  valuations,
+  readOnly = false,
+}: {
+  lot: Lot;
+  valuations: CardValuation[];
+  readOnly?: boolean;
+  asset?: Asset;
+}) {
+  const router = useRouter();
+  const held = lot.quantity_remaining > 0 && !readOnly;
+  const latest = valuations[valuations.length - 1] ?? null;
+  const [value, setValue] = useState(latest ? String(latest.value) : "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const costBasis = cardCostBasis(card);
-  const marketValue = latest
-    ? cardMarketValue(latest.value, card.quantity)
-    : null;
+  const costBasis = lot.unit_cost;
+  const marketValue = latest ? latest.value : null;
   const gainVsCost =
     marketValue != null ? percentChange(costBasis, marketValue) : null;
   const firstValuation = valuations[0] ?? null;
   const gainSinceFirst =
     firstValuation && latest && valuations.length > 1
-      ? percentChange(
-          cardMarketValue(firstValuation.value, card.quantity),
-          cardMarketValue(latest.value, card.quantity)
-        )
+      ? percentChange(firstValuation.value, latest.value)
       : null;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -77,7 +116,7 @@ export function CardValuationSection({
     }
 
     setLoading(true);
-    const result = await addCardValuation(card.id, parsed);
+    const result = await addLotValuation(lot.id, parsed);
     if (result.error) {
       setError(result.error);
       setLoading(false);
@@ -92,7 +131,10 @@ export function CardValuationSection({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base font-medium">Current Value</CardTitle>
+          <CardTitle className="text-base font-medium">
+            {held ? "Current Value" : "Historical Value"} · {gradeLabel(lot)}
+            {lot.cert_number ? ` · #${lot.cert_number}` : ""}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-3">
@@ -103,9 +145,7 @@ export function CardValuationSection({
             <ValuationMetric
               label="Current Value"
               value={
-                marketValue != null
-                  ? formatCurrency(marketValue)
-                  : "Not set"
+                marketValue != null ? formatCurrency(marketValue) : "Not set"
               }
               highlight
             />
@@ -123,20 +163,20 @@ export function CardValuationSection({
           {latest && (
             <p className="text-sm text-muted-foreground">
               Last updated {formatDateTime(latest.recorded_at)}
-              {card.quantity > 1
-                ? ` · ${formatCurrency(latest.value)} each × ${card.quantity}`
-                : ""}
             </p>
           )}
 
           {held ? (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-col gap-4 sm:flex-row sm:items-end"
+            >
               <div className="flex-1 space-y-2">
-                <Label htmlFor="current_value">
-                  {latest ? "Update current value" : "Set current value"} (per card)
+                <Label htmlFor={`current_value_${lot.id}`}>
+                  {latest ? "Update current value" : "Set current value"}
                 </Label>
                 <Input
-                  id="current_value"
+                  id={`current_value_${lot.id}`}
                   type="number"
                   min={0}
                   step="0.01"
@@ -146,23 +186,26 @@ export function CardValuationSection({
                 />
               </div>
               <Button type="submit" disabled={loading || !value}>
-                {loading ? "Saving..." : latest ? "Record New Value" : "Set Value"}
+                {loading
+                  ? "Saving..."
+                  : latest
+                    ? "Record New Value"
+                    : "Set Value"}
               </Button>
             </form>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Valuations are read-only for sold cards. Historical values are shown below.
+              Valuations are read-only for sold lots. Historical values are
+              shown below.
             </p>
           )}
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           {held && (
             <p className="text-xs text-muted-foreground">
-              Each entry is saved with a timestamp. Previous values are kept to
-              track changes over time.
+              Each entry is saved with a timestamp for this lot ({gradeLabel(lot)}
+              ).
             </p>
           )}
         </CardContent>
@@ -172,7 +215,7 @@ export function CardValuationSection({
         <Card>
           <CardHeader>
             <CardTitle className="text-base font-medium">
-              Value Change Since First Entry
+              Value Change Since First Entry · {gradeLabel(lot)}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -191,31 +234,25 @@ export function CardValuationSection({
       {valuations.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base font-medium">Value History</CardTitle>
+            <CardTitle className="text-base font-medium">
+              Value History · {gradeLabel(lot)}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <ValuationChart valuations={valuations} quantity={card.quantity} />
+            <ValuationChart valuations={valuations} />
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Recorded</TableHead>
-                  <TableHead className="text-right">Per Card</TableHead>
-                  <TableHead className="text-right">Position Value</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
                   <TableHead className="text-right">Change</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {[...valuations].reverse().map((entry, index, reversed) => {
                   const previous = reversed[index + 1];
-                  const positionValue = cardMarketValue(
-                    entry.value,
-                    card.quantity
-                  );
                   const change = previous
-                    ? percentChange(
-                        cardMarketValue(previous.value, card.quantity),
-                        positionValue
-                      )
+                    ? percentChange(previous.value, entry.value)
                     : null;
 
                   return (
@@ -223,9 +260,6 @@ export function CardValuationSection({
                       <TableCell>{formatDateTime(entry.recorded_at)}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(entry.value)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(positionValue)}
                       </TableCell>
                       <TableCell
                         className={cn(
@@ -281,16 +315,10 @@ function ValuationMetric({
   );
 }
 
-function ValuationChart({
-  valuations,
-  quantity,
-}: {
-  valuations: CardValuation[];
-  quantity: number;
-}) {
+function ValuationChart({ valuations }: { valuations: CardValuation[] }) {
   if (valuations.length < 2) return null;
 
-  const points = valuations.map((v) => cardMarketValue(v.value, quantity));
+  const points = valuations.map((v) => v.value);
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
