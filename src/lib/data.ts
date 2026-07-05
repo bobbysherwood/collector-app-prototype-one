@@ -1,43 +1,92 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Card, CardValuation, CardPerformance } from "@/types/card";
-import { cardCostBasis, cardMarketValue, isCardHeld, percentChange } from "@/types/card";
+import type {
+  Asset,
+  CardValuation,
+  LotPerformance,
+  Lot,
+  CardSale,
+} from "@/types/card";
+import {
+  buildAssetPositions,
+  buildHeldLotPositions,
+  costBasisHeld,
+  isAssetHeld,
+  quantityHeld,
+  type AssetPosition,
+  type HeldLotPosition,
+} from "@/types/card";
+import { positionMarketValue, percentChange } from "@/types/card";
 import { buildLatestValuationMap } from "@/lib/valuations";
-import type { CardSale } from "@/lib/portfolio-history";
 
-export async function getPortfolioChartData() {
-  const [cards, valuations] = await Promise.all([
-    getCards(),
+export type { AssetPosition, HeldLotPosition };
+
+export interface PortfolioData {
+  assets: Asset[];
+  lots: Lot[];
+  sales: CardSale[];
+  valuations: CardValuation[];
+  positions: AssetPosition[];
+  heldLotPositions: HeldLotPosition[];
+}
+
+export async function getPortfolioData(): Promise<PortfolioData> {
+  const [assets, lots, sales, valuations] = await Promise.all([
+    getAssets(),
+    getLots(),
+    getAllSales(),
     getAllValuations(),
   ]);
 
-  const heldCards = cards.filter(isCardHeld);
-  const performance = buildCardPerformanceLeaders(heldCards, valuations);
-
-  return { cards, heldCards, valuations, ...performance };
+  return {
+    assets,
+    lots,
+    sales,
+    valuations,
+    positions: buildAssetPositions(assets, lots),
+    heldLotPositions: buildHeldLotPositions(assets, lots),
+  };
 }
 
-export function buildCardPerformanceLeaders(
-  heldCards: Card[],
+export async function getPortfolioChartData() {
+  const data = await getPortfolioData();
+  const heldLotPositions = data.heldLotPositions;
+  const performance = buildLotPerformanceLeaders(
+    heldLotPositions,
+    data.valuations
+  );
+
+  return {
+    ...data,
+    heldLotPositions,
+    heldPositions: data.positions.filter((p) => isAssetHeld(p.lots)),
+    ...performance,
+  };
+}
+
+export function buildLotPerformanceLeaders(
+  heldLotPositions: HeldLotPosition[],
   valuations: CardValuation[],
   limit = 10
 ): {
-  topPerformers: CardPerformance[];
-  underperformers: CardPerformance[];
+  topPerformers: LotPerformance[];
+  underperformers: LotPerformance[];
 } {
   const latestValuations = buildLatestValuationMap(valuations);
-  const performances: CardPerformance[] = [];
+  const performances: LotPerformance[] = [];
 
-  for (const card of heldCards) {
-    const latest = latestValuations.get(card.id);
+  for (const { asset, lot } of heldLotPositions) {
+    const latest = latestValuations.get(lot.id);
     if (!latest) continue;
 
-    const costBasis = cardCostBasis(card);
-    const currentValue = cardMarketValue(latest.value, card.quantity);
+    const qty = lot.quantity_remaining;
+    const costBasis = lot.unit_cost * qty;
+    const currentValue = positionMarketValue(latest.value, qty);
     const gainPercent = percentChange(costBasis, currentValue);
     if (gainPercent == null || Number.isNaN(gainPercent)) continue;
 
     performances.push({
-      card,
+      asset,
+      lot,
       costBasis,
       currentValue,
       gainAmount: currentValue - costBasis,
@@ -58,6 +107,12 @@ export function buildCardPerformanceLeaders(
   return { topPerformers, underperformers };
 }
 
+/** @deprecated Use buildLotPerformanceLeaders */
+export const buildAssetPerformanceLeaders = buildLotPerformanceLeaders;
+
+/** @deprecated Use buildLotPerformanceLeaders */
+export const buildCardPerformanceLeaders = buildLotPerformanceLeaders;
+
 export async function getAllSales(): Promise<CardSale[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -69,37 +124,68 @@ export async function getAllSales(): Promise<CardSale[]> {
   return (data ?? []) as CardSale[];
 }
 
-export async function getCards(): Promise<Card[]> {
+export async function getAssets(): Promise<Asset[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("cards")
+    .from("assets")
     .select("*")
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []).map((card) => ({
-    ...card,
-    status: card.status ?? "held",
-    sold_at: card.sold_at ?? null,
-    sold_price: card.sold_price ?? null,
-  })) as Card[];
+  return (data ?? []) as Asset[];
 }
 
-export async function getCard(id: string): Promise<Card | null> {
+/** @deprecated Use getAssets */
+export const getCards = getAssets;
+
+export async function getLots(): Promise<Lot[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("cards")
+    .from("lots")
+    .select("*")
+    .order("purchase_date", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as Lot[];
+}
+
+export async function getAsset(id: string): Promise<Asset | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("assets")
     .select("*")
     .eq("id", id)
     .single();
 
   if (error) return null;
-  return {
-    ...data,
-    status: data.status ?? "held",
-    sold_at: data.sold_at ?? null,
-    sold_price: data.sold_price ?? null,
-  } as Card;
+  return data as Asset;
+}
+
+/** @deprecated Use getAsset */
+export const getCard = getAsset;
+
+export async function getLotsForAsset(assetId: string): Promise<Lot[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("lots")
+    .select("*")
+    .eq("asset_id", assetId)
+    .order("purchase_date", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as Lot[];
+}
+
+export async function getSalesForAsset(assetId: string): Promise<CardSale[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("card_sales")
+    .select("*")
+    .eq("asset_id", assetId)
+    .order("sale_date", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as CardSale[];
 }
 
 export async function getAllValuations(): Promise<CardValuation[]> {
@@ -113,19 +199,43 @@ export async function getAllValuations(): Promise<CardValuation[]> {
   return data as CardValuation[];
 }
 
-export async function getCardValuations(
-  cardId: string
+export async function getValuationsForAsset(
+  assetId: string
 ): Promise<CardValuation[]> {
+  const lots = await getLotsForAsset(assetId);
+  if (lots.length === 0) return [];
+
+  const lotIds = lots.map((l) => l.id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("card_valuations")
     .select("*")
-    .eq("card_id", cardId)
+    .in("lot_id", lotIds)
     .order("recorded_at", { ascending: true });
 
   if (error) throw error;
   return data as CardValuation[];
 }
+
+export async function getLotValuations(
+  lotId: string
+): Promise<CardValuation[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("card_valuations")
+    .select("*")
+    .eq("lot_id", lotId)
+    .order("recorded_at", { ascending: true });
+
+  if (error) throw error;
+  return data as CardValuation[];
+}
+
+/** @deprecated Use getValuationsForAsset */
+export const getAssetValuations = getValuationsForAsset;
+
+/** @deprecated Use getValuationsForAsset */
+export const getCardValuations = getValuationsForAsset;
 
 export async function getLatestValuationMap(): Promise<
   Map<string, CardValuation>
@@ -178,3 +288,9 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     displayName,
   };
 }
+
+export {
+  salesForAsset,
+  totalSaleProceeds,
+  totalSoldQuantity,
+} from "@/lib/inventory";

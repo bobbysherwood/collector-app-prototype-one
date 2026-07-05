@@ -1,109 +1,103 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import Image from "next/image";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { deleteCard } from "@/app/actions/cards";
-import { CardValuationSection } from "@/components/card-valuation-section";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { AddAcquisitionDialog } from "@/components/add-acquisition-dialog";
+import { DeleteCardDialog } from "@/components/delete-card-dialog";
+import { LotAcquisitionsTable } from "@/components/lot-acquisitions-table";
 import { MarkCardSoldDialog } from "@/components/mark-card-sold-dialog";
-import type { Card, CardValuation } from "@/types/card";
+import type { Asset, Lot, CardSale, CardValuation } from "@/types/card";
 import {
   cardTitle,
   formatCurrency,
-  cardCostBasis,
-  cardSaleProceeds,
   gradeLabel,
-  isCardHeld,
   percentChange,
   formatPercent,
+  costBasisHeld,
+  quantityHeld,
+  isAssetHeld,
+  totalSaleProceeds,
+  totalCostBasisAcquired,
+  totalSoldQuantity,
 } from "@/types/card";
+import { groupValuationsByLot } from "@/lib/valuations";
 import { getImageUrl } from "@/lib/images";
 
 interface CardDetailProps {
-  card: Card;
+  asset: Asset;
+  lots: Lot[];
+  sales: CardSale[];
   valuations: CardValuation[];
 }
 
-export function CardDetail({ card, valuations }: CardDetailProps) {
-  const [deleting, setDeleting] = useState(false);
-  const [open, setOpen] = useState(false);
-  const imageUrl = getImageUrl(card.image_path);
-  const held = isCardHeld(card);
-  const saleProceeds = cardSaleProceeds(card);
-  const costBasis = cardCostBasis(card);
+export function CardDetail({ asset, lots, sales, valuations }: CardDetailProps) {
+  const valuationsByLot = groupValuationsByLot(valuations);
+  const imageUrl = getImageUrl(asset.image_path);
+  const held = isAssetHeld(lots);
+  const qtyHeld = quantityHeld(lots);
+  const costBasis = held ? costBasisHeld(lots) : totalCostBasisAcquired(lots);
+  const saleProceeds = sales.length > 0 ? totalSaleProceeds(sales) : null;
   const realizedGain =
     saleProceeds != null ? percentChange(costBasis, saleProceeds) : null;
-
-  async function handleDelete() {
-    setDeleting(true);
-    await deleteCard(card.id);
-  }
+  const sortedLots = [...lots].sort((a, b) =>
+    a.purchase_date.localeCompare(b.purchase_date)
+  );
+  const sortedSales = [...sales].sort((a, b) =>
+    a.sale_date.localeCompare(b.sale_date)
+  );
+  const heldGrades = [
+    ...new Set(
+      lots
+        .filter((l) => l.quantity_remaining > 0)
+        .map((l) => gradeLabel(l))
+    ),
+  ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/collection">
-          <Button variant="ghost" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Collection
-          </Button>
-        </Link>
-        <div className="ml-auto flex gap-2">
-          {held && <MarkCardSoldDialog card={card} />}
+        <Button
+          render={<Link href="/holdings" />}
+          nativeButton={false}
+          variant="ghost"
+          className="gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Holdings
+        </Button>
+        <div className="ml-auto flex gap-2 flex-wrap">
+          {held && <AddAcquisitionDialog asset={asset} />}
+          {held && <MarkCardSoldDialog asset={asset} lots={lots} />}
           {held && (
-            <Link href={`/cards/${card.id}/edit`}>
-              <Button variant="outline" className="gap-2">
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Button>
-            </Link>
+            <Button
+              render={<Link href={`/cards/${asset.id}/edit`} />}
+              nativeButton={false}
+              variant="outline"
+              className="gap-2"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Button>
           )}
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger>
-              <Button variant="destructive" className="gap-2">
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Delete card?</DialogTitle>
-                <DialogDescription>
-                  This will permanently remove {cardTitle(card)} from your
-                  collection. This action cannot be undone.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                  disabled={deleting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                >
-                  {deleting ? "Deleting..." : "Delete"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <DeleteCardDialog card={asset} />
         </div>
       </div>
 
@@ -123,7 +117,7 @@ export function CardDetail({ card, valuations }: CardDetailProps) {
           {imageUrl ? (
             <Image
               src={imageUrl}
-              alt={cardTitle(card)}
+              alt={cardTitle(asset)}
               fill
               className={`object-contain p-3 ${held ? "" : "grayscale-[35%]"}`}
               priority
@@ -132,7 +126,7 @@ export function CardDetail({ card, valuations }: CardDetailProps) {
           ) : (
             <div className="flex h-full items-center justify-center">
               <span className="text-6xl font-bold text-muted-foreground/20">
-                {card.player_name.charAt(0)}
+                {asset.player_name.charAt(0)}
               </span>
             </div>
           )}
@@ -142,56 +136,57 @@ export function CardDetail({ card, valuations }: CardDetailProps) {
           <div>
             <div className="flex items-start gap-3 flex-wrap">
               <h1 className="text-2xl font-semibold tracking-tight">
-                {cardTitle(card)}
+                {cardTitle(asset)}
               </h1>
-              {card.quantity > 1 && (
-                <Badge variant="secondary">Qty: {card.quantity}</Badge>
+              {held && qtyHeld > 1 && (
+                <Badge variant="secondary">{qtyHeld} copies held</Badge>
               )}
-              {!held && <Badge variant="secondary">Sold</Badge>}
+              {!held && (
+                <Badge variant="secondary">
+                  Sold · {totalSoldQuantity(sales)} card
+                  {totalSoldQuantity(sales) === 1 ? "" : "s"}
+                </Badge>
+              )}
             </div>
             <p className="text-muted-foreground mt-1">
-              {card.sport}
-              {card.card_number ? ` · #${card.card_number}` : ""}
+              {asset.sport}
+              {asset.card_number ? ` · #${asset.card_number}` : ""}
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{gradeLabel(card)}</Badge>
-            {card.insert_parallel && (
-              <Badge variant="outline">{card.insert_parallel}</Badge>
+            {heldGrades.map((label) => (
+              <Badge key={label} variant="outline">
+                {label}
+              </Badge>
+            ))}
+            {asset.insert_parallel && (
+              <Badge variant="outline">{asset.insert_parallel}</Badge>
             )}
           </div>
 
           <Separator />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <DetailField label="Cost Basis" value={formatCurrency(costBasis)} />
             <DetailField
-              label="Purchase Price"
-              value={`${formatCurrency(card.purchase_price)}${card.quantity > 1 ? " each" : ""}`}
+              label={held ? "Cost Basis (Held)" : "Total Cost Basis"}
+              value={formatCurrency(costBasis)}
             />
-            <DetailField label="Purchase Date" value={card.purchase_date} />
-            <DetailField label="Card Type" value={card.card_type} />
-            <DetailField label="Year" value={card.year.toString()} />
-            <DetailField label="Sport" value={card.sport} />
-            {card.card_number && (
-              <DetailField label="Card Number" value={card.card_number} />
-            )}
-            {card.cert_number && (
-              <DetailField label="Cert Number" value={card.cert_number} />
-            )}
-            {!held && card.sold_at && (
-              <DetailField label="Sale Date" value={card.sold_at} />
-            )}
-            {!held && card.sold_price != null && (
+            {held && (
               <DetailField
-                label="Sale Value"
-                value={`${formatCurrency(card.sold_price)}${card.quantity > 1 ? " each" : ""}`}
+                label="Copies Held"
+                value={String(qtyHeld)}
               />
+            )}
+            <DetailField label="Card Type" value={asset.card_type} />
+            <DetailField label="Year" value={asset.year.toString()} />
+            <DetailField label="Sport" value={asset.sport} />
+            {asset.card_number && (
+              <DetailField label="Card Number" value={asset.card_number} />
             )}
             {!held && saleProceeds != null && (
               <DetailField
-                label="Sale Proceeds"
+                label="Total Sale Proceeds"
                 value={formatCurrency(saleProceeds)}
               />
             )}
@@ -203,19 +198,66 @@ export function CardDetail({ card, valuations }: CardDetailProps) {
             )}
           </div>
 
-          {card.notes && (
+          {asset.notes && (
             <>
               <Separator />
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Notes</p>
-                <p className="text-sm">{card.notes}</p>
+                <p className="text-sm">{asset.notes}</p>
               </div>
             </>
           )}
         </div>
       </div>
 
-      <CardValuationSection card={card} valuations={valuations} />
+      {sortedLots.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <CardTitle className="text-base font-medium">
+              Lots / Acquisitions
+            </CardTitle>
+            {held && <AddAcquisitionDialog asset={asset} />}
+          </CardHeader>
+          <CardContent>
+            <LotAcquisitionsTable
+              lots={sortedLots}
+              valuationsByLot={valuationsByLot}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {sortedSales.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base font-medium">Sales History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Sale Date</TableHead>
+                  <TableHead className="text-right">Sale Value</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedSales.map((sale) => (
+                  <TableRow key={sale.id}>
+                    <TableCell>{sale.sale_date}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(sale.sale_price * sale.quantity)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {sale.notes ?? "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

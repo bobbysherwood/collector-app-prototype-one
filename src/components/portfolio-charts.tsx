@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Cell,
-  Legend,
   Line,
   LineChart,
   Pie,
@@ -25,8 +24,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Card as CardType, CardValuation } from "@/types/card";
-import { formatCurrency } from "@/types/card";
+import type { AssetPosition } from "@/types/card";
+import type { CardValuation } from "@/types/card";
+import { formatCurrency, formatPercent } from "@/types/card";
 import {
   TIME_RANGES,
   type TimeRangeKey,
@@ -39,18 +39,11 @@ import { buildLatestValuationMap } from "@/lib/valuations";
 import { cn } from "@/lib/utils";
 
 interface PortfolioChartsProps {
-  cards: CardType[];
-  heldCards: CardType[];
+  positions: AssetPosition[];
+  heldLotPositions: import("@/types/card").HeldLotPosition[];
+  lots: import("@/types/card").Lot[];
   valuations: CardValuation[];
 }
-
-type SeriesKey = "value" | "costBasis" | "returns";
-
-const SERIES_OPTIONS: { key: SeriesKey; label: string; color: string }[] = [
-  { key: "value", label: "Value", color: "var(--color-primary)" },
-  { key: "costBasis", label: "Cost Basis", color: "oklch(0.55 0.03 265)" },
-  { key: "returns", label: "Returns", color: "oklch(0.58 0.18 145)" },
-];
 
 function ChartTooltip({
   active,
@@ -95,23 +88,21 @@ function PieTooltip({
 }
 
 export function PortfolioCharts({
-  cards,
-  heldCards,
+  positions,
+  heldLotPositions,
+  lots,
   valuations,
 }: PortfolioChartsProps) {
   const [timeRange, setTimeRange] = useState<TimeRangeKey>("3y");
-  const [activeSeries, setActiveSeries] = useState<Set<SeriesKey>>(
-    new Set(["value", "costBasis", "returns"])
-  );
 
   const history = useMemo(
-    () => buildPortfolioHistory(cards, valuations, timeRange),
-    [cards, valuations, timeRange]
+    () => buildPortfolioHistory(positions, valuations, lots, timeRange),
+    [positions, valuations, lots, timeRange]
   );
 
   const periodSummary = useMemo(
-    () => getPeriodSummary(cards, valuations, timeRange),
-    [cards, valuations, timeRange]
+    () => getPeriodSummary(positions, valuations, lots, timeRange),
+    [positions, valuations, lots, timeRange]
   );
 
   const latestValuationMap = useMemo(
@@ -120,8 +111,8 @@ export function PortfolioCharts({
   );
 
   const sportAllocation = useMemo(
-    () => buildSportAllocation(heldCards, latestValuationMap),
-    [heldCards, latestValuationMap]
+    () => buildSportAllocation(heldLotPositions, latestValuationMap),
+    [heldLotPositions, latestValuationMap]
   );
 
   const pieData = sportAllocation.map((slice, index) => ({
@@ -140,28 +131,12 @@ export function PortfolioCharts({
     return { totalCards, totalCostBasis, totalCurrent, hasCurrent };
   }, [pieData]);
 
-  function toggleSeries(key: SeriesKey) {
-    setActiveSeries((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        if (next.size > 1) next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }
-
-  const showValue = activeSeries.has("value");
-  const showCostBasis = activeSeries.has("costBasis");
-  const showReturns = activeSeries.has("returns");
-
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <Card className="min-w-0 h-full lg:col-span-8">
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base font-medium">
-            Portfolio Overview
+            Portfolio Performance
           </CardTitle>
           <div className="flex flex-wrap gap-2">
             {TIME_RANGES.map((range) => (
@@ -178,47 +153,33 @@ export function PortfolioCharts({
         </CardHeader>
         <CardContent className="space-y-4">
           {periodSummary && (
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <SummaryTile
-                label="Latest Value"
-                value={formatCurrency(periodSummary.endValue)}
-                subtitle={`Current · ${periodSummary.endLabel}`}
-              />
-              <SummaryTile
-                label="Cost Basis"
-                value={formatCurrency(periodSummary.costBasis)}
-                subtitle={`${periodSummary.periodLabel} · Purchases since ${periodSummary.startLabel}`}
-              />
-              <SummaryTile
-                label="Returns"
+                label={`Returns (${periodSummary.periodLabel})`}
                 value={formatCurrency(periodSummary.returns)}
                 positive={periodSummary.returns >= 0}
-                subtitle={`${periodSummary.periodLabel} · Value minus period cost`}
+                subtitle="Asset gains on held lots during the selected period"
+              />
+              <SummaryTile
+                label={`Rate of Return (${periodSummary.periodLabel})`}
+                value={
+                  periodSummary.rateOfReturn != null
+                    ? formatPercent(periodSummary.rateOfReturn)
+                    : "N/A"
+                }
+                positive={
+                  periodSummary.rateOfReturn != null
+                    ? periodSummary.rateOfReturn >= 0
+                    : undefined
+                }
+                subtitle={
+                  periodSummary.rateOfReturn != null
+                    ? "Annualized return based on the selected period"
+                    : "Requires at least 12 months of history (not available for YTD)"
+                }
               />
             </div>
           )}
-
-          <div className="flex flex-wrap gap-2">
-            {SERIES_OPTIONS.map((series) => (
-              <button
-                key={series.key}
-                type="button"
-                onClick={() => toggleSeries(series.key)}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors",
-                  activeSeries.has(series.key)
-                    ? "border-primary/30 bg-primary/10 text-primary"
-                    : "border-border bg-card text-muted-foreground hover:bg-muted"
-                )}
-              >
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ background: series.color }}
-                />
-                {series.label}
-              </button>
-            ))}
-          </div>
 
           {history.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">
@@ -246,41 +207,15 @@ export function PortfolioCharts({
                     className="text-muted-foreground"
                   />
                   <Tooltip content={<ChartTooltip />} />
-                  <Legend />
-
-                  {showValue && (
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      name="Portfolio Value"
-                      stroke="var(--color-primary)"
-                      strokeWidth={2.5}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                  )}
-                  {showCostBasis && (
-                    <Line
-                      type="monotone"
-                      dataKey="costBasis"
-                      name="Cost Basis"
-                      stroke="oklch(0.55 0.03 265)"
-                      strokeWidth={2}
-                      dot={false}
-                      strokeDasharray="4 4"
-                    />
-                  )}
-                  {showReturns && (
-                    <Line
-                      type="monotone"
-                      dataKey="returns"
-                      name="Returns"
-                      stroke="oklch(0.58 0.18 145)"
-                      strokeWidth={2}
-                      dot={false}
-                      strokeDasharray="6 4"
-                    />
-                  )}
+                  <Line
+                    type="monotone"
+                    dataKey="returns"
+                    name="Returns"
+                    stroke="oklch(0.58 0.18 145)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -327,9 +262,9 @@ export function PortfolioCharts({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Sport</TableHead>
-                      <TableHead className="text-right">Cards</TableHead>
+                      <TableHead className="text-right">Assets</TableHead>
                       <TableHead className="text-right">Cost Basis</TableHead>
-                      <TableHead className="text-right">Current</TableHead>
+                      <TableHead className="text-right">Current Value</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

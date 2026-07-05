@@ -6,33 +6,33 @@ export function buildLatestValuationMap(
   const map = new Map<string, CardValuation>();
 
   for (const valuation of valuations) {
-    const existing = map.get(valuation.card_id);
+    const existing = map.get(valuation.lot_id);
     if (
       !existing ||
       new Date(valuation.recorded_at).getTime() >
         new Date(existing.recorded_at).getTime()
     ) {
-      map.set(valuation.card_id, valuation);
+      map.set(valuation.lot_id, valuation);
     }
   }
 
   return map;
 }
 
-export function groupValuationsByCard(
+export function groupValuationsByLot(
   valuations: CardValuation[]
 ): Map<string, CardValuation[]> {
   const map = new Map<string, CardValuation[]>();
 
   for (const valuation of valuations) {
-    const list = map.get(valuation.card_id) ?? [];
+    const list = map.get(valuation.lot_id) ?? [];
     list.push(valuation);
-    map.set(valuation.card_id, list);
+    map.set(valuation.lot_id, list);
   }
 
-  for (const [cardId, list] of map) {
+  for (const [lotId, list] of map) {
     map.set(
-      cardId,
+      lotId,
       [...list].sort(
         (a, b) =>
           new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
@@ -42,3 +42,6 @@ export function groupValuationsByCard(
 
   return map;
 }
+
+/** @deprecated Use groupValuationsByLot */
+export const groupValuationsByAsset = groupValuationsByLot;

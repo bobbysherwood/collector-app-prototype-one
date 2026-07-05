@@ -15,8 +15,9 @@ export default async function DashboardPage() {
       </div>
 
       <PortfolioCharts
-        cards={chartData.cards}
-        heldCards={chartData.heldCards}
+        positions={chartData.positions}
+        heldLotPositions={chartData.heldLotPositions}
+        lots={chartData.lots}
         valuations={chartData.valuations}
       />
 
