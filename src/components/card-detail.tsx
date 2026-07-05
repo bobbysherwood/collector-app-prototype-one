@@ -38,6 +38,8 @@ import {
   totalCostBasisAcquired,
   totalSoldQuantity,
 } from "@/types/card";
+import { getMockMarketSales } from "@/lib/market-sales";
+import { MarketSalesSection } from "@/components/market-sales-section";
 import { groupValuationsByLot } from "@/lib/valuations";
 import { getImageUrl } from "@/lib/images";
 
@@ -63,6 +65,7 @@ export function CardDetail({ asset, lots, sales, valuations }: CardDetailProps) 
   const sortedSales = [...sales].sort((a, b) =>
     a.sale_date.localeCompare(b.sale_date)
   );
+  const marketSales = getMockMarketSales(asset, lots);
   const heldGrades = [
     ...new Set(
       lots
@@ -227,10 +230,16 @@ export function CardDetail({ asset, lots, sales, valuations }: CardDetailProps) 
         </Card>
       )}
 
+      <MarketSalesSection
+        asset={asset}
+        lots={lots}
+        data={marketSales}
+      />
+
       {sortedSales.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base font-medium">Sales History</CardTitle>
+            <CardTitle className="text-base font-medium">Your Sales</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
