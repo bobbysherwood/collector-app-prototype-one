@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   ArrowDown,
@@ -10,21 +9,10 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
-  DollarSign,
-  EllipsisVertical,
-  Pencil,
-  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DeleteCardDialog } from "@/components/delete-card-dialog";
-import { MarkCardSoldDialog } from "@/components/mark-card-sold-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { CardRowActions } from "@/components/card-row-actions";
 import {
   Table,
   TableBody,
@@ -647,94 +635,5 @@ function SoldAssetListRow({
         <CardRowActions asset={asset} lots={lots} held={false} />
       </TableCell>
     </TableRow>
-  );
-}
-
-function CardRowActions({
-  asset,
-  lots,
-  lot,
-  held,
-}: {
-  asset: Asset;
-  lots: Lot[];
-  lot?: Lot;
-  held: boolean;
-}) {
-  const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [soldDialogOpen, setSoldDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-
-  return (
-    <>
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger
-          className="outline-none"
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Asset actions"
-            />
-          }
-        >
-          <EllipsisVertical className="h-4 w-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {held && (
-            <>
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onClick={() => {
-                  setMenuOpen(false);
-                  router.push(`/cards/${asset.id}/edit`);
-                }}
-              >
-                <Pencil className="h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSoldDialogOpen(true);
-                }}
-              >
-                <DollarSign className="h-4 w-4" />
-                Mark as Sold
-              </DropdownMenuItem>
-            </>
-          )}
-          <DropdownMenuItem
-            variant="destructive"
-            className="cursor-pointer"
-            onClick={() => {
-              setMenuOpen(false);
-              setDeleteDialogOpen(true);
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {held && (
-        <MarkCardSoldDialog
-          asset={asset}
-          lots={lots}
-          lotId={lot?.id}
-          open={soldDialogOpen}
-          onOpenChange={setSoldDialogOpen}
-          showTrigger={false}
-        />
-      )}
-      <DeleteCardDialog
-        card={asset}
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        showTrigger={false}
-      />
-    </>
   );
 }
