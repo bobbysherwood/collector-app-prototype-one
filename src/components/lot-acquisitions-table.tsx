@@ -14,8 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { addLotValuation } from "@/app/actions/valuations";
-import { EditLotTrigger } from "@/components/edit-lot-dialog";
-import type { CardValuation, Lot } from "@/types/card";
+import { LotRowActions } from "@/components/lot-row-actions";
+import type { Asset, CardValuation, Lot } from "@/types/card";
 import {
   formatCurrency,
   formatPercent,
@@ -25,11 +25,13 @@ import {
 import { cn } from "@/lib/utils";
 
 interface LotAcquisitionsTableProps {
+  asset: Asset;
   lots: Lot[];
   valuationsByLot: Map<string, CardValuation[]>;
 }
 
 export function LotAcquisitionsTable({
+  asset,
   lots,
   valuationsByLot,
 }: LotAcquisitionsTableProps) {
@@ -51,6 +53,8 @@ export function LotAcquisitionsTable({
         {lots.map((lot) => (
           <LotAcquisitionRow
             key={lot.id}
+            asset={asset}
+            allLots={lots}
             lot={lot}
             valuations={valuationsByLot.get(lot.id) ?? []}
           />
@@ -61,13 +65,17 @@ export function LotAcquisitionsTable({
 }
 
 function LotAcquisitionRow({
+  asset,
+  allLots,
   lot,
   valuations,
 }: {
+  asset: Asset;
+  allLots: Lot[];
   lot: Lot;
   valuations: CardValuation[];
 }) {
-  const held = lot.quantity_remaining > 0;
+  const held = Number(lot.quantity_remaining) > 0;
   const latest = valuations[valuations.length - 1] ?? null;
   const marketValue = latest?.value ?? null;
   const gainPercent =
@@ -115,7 +123,7 @@ function LotAcquisitionRow({
         </Badge>
       </TableCell>
       <TableCell className="text-right">
-        {held ? <EditLotTrigger lot={lot} compact /> : null}
+        <LotRowActions asset={asset} lot={lot} allLots={allLots} />
       </TableCell>
     </TableRow>
   );

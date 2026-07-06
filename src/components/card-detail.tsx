@@ -223,6 +223,7 @@ export function CardDetail({ asset, lots, sales, valuations }: CardDetailProps) 
           </CardHeader>
           <CardContent>
             <LotAcquisitionsTable
+              asset={asset}
               lots={sortedLots}
               valuationsByLot={valuationsByLot}
             />

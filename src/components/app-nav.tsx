@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { LayoutDashboard, Layers, Plus, LogOut, User } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, Layers, LineChart, Plus, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,6 +22,9 @@ interface AppNavProps {
 
 export function AppNav({ email, displayName }: AppNavProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const hideAddAsset =
+    pathname === "/cards/new" || /^\/cards\/[^/]+\/edit$/.test(pathname);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/80 bg-card/90 shadow-sm backdrop-blur-md">
@@ -54,13 +57,24 @@ export function AppNav({ email, displayName }: AppNavProps) {
               <Layers className="h-4 w-4" />
               <span className="hidden sm:inline">Holdings</span>
             </Button>
+            <Button
+              render={<Link href="/market-research" />}
+              nativeButton={false}
+              variant="ghost"
+              className="gap-2"
+            >
+              <LineChart className="h-4 w-4" />
+              <span className="hidden sm:inline">Market Research</span>
+            </Button>
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          <Button render={<Link href="/cards/new" />} nativeButton={false} className="gap-2">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Add Asset</span>
-          </Button>
+          {!hideAddAsset && (
+            <Button render={<Link href="/cards/new" />} nativeButton={false} className="gap-2">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Add Asset</span>
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger
               className="outline-none"

@@ -1,4 +1,5 @@
 import { PortfolioCharts } from "@/components/portfolio-charts";
+import { PortfolioInsights } from "@/components/portfolio-insights";
 import { PortfolioPerformanceLeaders } from "@/components/portfolio-performance-leaders";
 import { getPortfolioChartData } from "@/lib/data";
 
@@ -20,6 +21,8 @@ export default async function DashboardPage() {
         lots={chartData.lots}
         valuations={chartData.valuations}
       />
+
+      <PortfolioInsights />
 
       <PortfolioPerformanceLeaders
         topPerformers={chartData.topPerformers}
