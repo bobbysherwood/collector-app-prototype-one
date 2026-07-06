@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Layers, LineChart, Plus, LogOut, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LayoutDashboard, Layers, Plus, LogOut, Shield, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,9 +18,10 @@ import { signOut } from "@/app/actions/auth";
 interface AppNavProps {
   email: string;
   displayName: string;
+  isAdmin?: boolean;
 }
 
-export function AppNav({ email, displayName }: AppNavProps) {
+export function AppNav({ email, displayName, isAdmin = false }: AppNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const hideAddAsset =
@@ -98,6 +99,15 @@ export function AppNav({ email, displayName }: AppNavProps) {
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
+                {isAdmin ? (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    onClick={() => router.push("/admin")}
+                  >
+                    <Shield className="h-4 w-4" />
+                    Admin Screen
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onClick={() => router.push("/profile")}
