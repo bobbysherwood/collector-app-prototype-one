@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { UserRole } from "@/types/user";
 import type {
   Asset,
   CardValuation,
@@ -256,6 +257,7 @@ export interface UserProfile {
   id: string;
   email: string;
   displayName: string;
+  role: UserRole;
 }
 
 export async function getUserProfile(): Promise<UserProfile | null> {
@@ -268,7 +270,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("display_name, email")
+    .select("display_name, email, role")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -286,6 +288,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     id: user.id,
     email: profile?.email ?? user.email ?? "",
     displayName,
+    role: (profile?.role as UserRole | undefined) ?? "user",
   };
 }
 
