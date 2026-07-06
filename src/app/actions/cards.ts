@@ -332,6 +332,96 @@ export async function updateLot(
   return {};
 }
 
+export async function deleteLot(
+  lotId: string
+): Promise<{ error?: string; assetDeleted?: boolean; assetId?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Not authenticated" };
+  }
+
+  const { data: lot } = await supabase
+    .from("lots")
+    .select("id, asset_id")
+    .eq("id", lotId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!lot) {
+    return { error: "Lot not found." };
+  }
+
+  const { data: allocations } = await supabase
+    .from("sale_lot_allocations")
+    .select("sale_id")
+    .eq("lot_id", lotId);
+
+  const saleIds = [
+    ...new Set((allocations ?? []).map((row) => row.sale_id)),
+  ];
+
+  const { error: allocationError } = await supabase
+    .from("sale_lot_allocations")
+    .delete()
+    .eq("lot_id", lotId);
+
+  if (allocationError) {
+    return { error: allocationError.message };
+  }
+
+  for (const saleId of saleIds) {
+    const { count } = await supabase
+      .from("sale_lot_allocations")
+      .select("*", { count: "exact", head: true })
+      .eq("sale_id", saleId);
+
+    if (count === 0) {
+      const { error: saleError } = await supabase
+        .from("card_sales")
+        .delete()
+        .eq("id", saleId)
+        .eq("user_id", user.id);
+
+      if (saleError) {
+        return { error: saleError.message };
+      }
+    }
+  }
+
+  const { error: lotError } = await supabase
+    .from("lots")
+    .delete()
+    .eq("id", lotId)
+    .eq("user_id", user.id);
+
+  if (lotError) {
+    return { error: lotError.message };
+  }
+
+  const { count: remainingLots } = await supabase
+    .from("lots")
+    .select("*", { count: "exact", head: true })
+    .eq("asset_id", lot.asset_id)
+    .eq("user_id", user.id);
+
+  if ((remainingLots ?? 0) === 0) {
+    const result = await deleteCard(lot.asset_id);
+    if (result?.error) {
+      return { error: result.error };
+    }
+    return { assetDeleted: true, assetId: lot.asset_id };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/holdings");
+  revalidatePath(`/cards/${lot.asset_id}`);
+  return { assetDeleted: false, assetId: lot.asset_id };
+}
+
 export async function deleteCard(id: string) {
   const supabase = await createClient();
   const {
@@ -349,6 +439,39 @@ export async function deleteCard(id: string) {
     .eq("user_id", user.id)
     .single();
 
+  if (!asset) {
+    return { error: "Asset not found." };
+  }
+
+  const { data: lots } = await supabase
+    .from("lots")
+    .select("id")
+    .eq("asset_id", id)
+    .eq("user_id", user.id);
+
+  const lotIds = (lots ?? []).map((lot) => lot.id);
+
+  const { error: salesError } = await supabase
+    .from("card_sales")
+    .delete()
+    .eq("asset_id", id)
+    .eq("user_id", user.id);
+
+  if (salesError) {
+    return { error: salesError.message };
+  }
+
+  if (lotIds.length > 0) {
+    const { error: allocationError } = await supabase
+      .from("sale_lot_allocations")
+      .delete()
+      .in("lot_id", lotIds);
+
+    if (allocationError) {
+      return { error: allocationError.message };
+    }
+  }
+
   const { error } = await supabase
     .from("assets")
     .delete()
@@ -359,13 +482,13 @@ export async function deleteCard(id: string) {
     return { error: error.message };
   }
 
-  if (asset?.image_path) {
+  if (asset.image_path) {
     await supabase.storage.from("card-images").remove([asset.image_path]);
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/holdings");
-  redirect("/holdings");
+  return {};
 }
 
 export async function uploadCardImage(
