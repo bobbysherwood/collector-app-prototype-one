@@ -7,6 +7,7 @@ import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
 import type {
   CardRepositoryEntryInput,
+  CardRepositorySearchResult,
   CardRepositorySetKey,
 } from "@/types/card-repository";
 
@@ -239,6 +240,65 @@ export async function getCardRepositorySetExportRows(set: CardRepositorySetKey) 
         serialNumber: row.serial_number,
         releaseDate: row.release_date,
       }))
+    ),
+  };
+}
+
+export async function searchCardRepositoryCards(
+  query: string
+): Promise<{ error?: string; cards?: CardRepositorySearchResult[] }> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return { cards: [] };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in to search the card repository." };
+  }
+
+  const { data, error } = await supabase.rpc("search_card_repository", {
+    query: trimmed,
+    lim: 20,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return {
+    cards: (data ?? []).map(
+      (row: {
+        id: string;
+        category: string;
+        year: number;
+        manufacturer: string;
+        brand: string;
+        card_set_category: string;
+        card_set: string;
+        card_number: string;
+        player: string;
+        parallel: string | null;
+        serial_number: number | null;
+        release_date: string | null;
+      }) => ({
+        id: row.id,
+        category: row.category,
+        year: row.year,
+        manufacturer: row.manufacturer,
+        brand: row.brand,
+        cardSetCategory: row.card_set_category,
+        cardSet: row.card_set,
+        cardNumber: row.card_number,
+        player: row.player,
+        parallel: row.parallel,
+        serialNumber: row.serial_number,
+        releaseDate: row.release_date,
+      })
     ),
   };
 }
