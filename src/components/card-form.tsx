@@ -32,6 +32,8 @@ interface CardFormProps {
   card?: import("@/types/asset").Asset;
   lots?: import("@/types/asset").Lot[];
   mode: "create" | "edit";
+  initialForm?: Partial<CardFormData>;
+  onBackToSearch?: () => void;
 }
 
 const emptyForm: CardFormData = {
@@ -50,7 +52,13 @@ const emptyForm: CardFormData = {
   current_value: "",
 };
 
-export function CardForm({ card, lots = [], mode }: CardFormProps) {
+export function CardForm({
+  card,
+  lots = [],
+  mode,
+  initialForm,
+  onBackToSearch,
+}: CardFormProps) {
   const router = useRouter();
   const primaryLot =
     lots.length === 1
@@ -58,26 +66,30 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
       : lots.find((l) => l.quantity_remaining > 0) ?? lots[0];
   const canEditLotFields = mode === "create" || lots.length === 1;
 
-  const [form, setForm] = useState<CardFormData>(
-    card && primaryLot
-      ? {
-          player_name: card.player_name,
-          year: card.year,
-          card_type: card.card_type,
-          sport: card.sport,
-          card_number: card.card_number ?? "",
-          insert_parallel: card.insert_parallel ?? "",
-          grader:
-            primaryLot.grader === "Ungraded" ? "Raw" : primaryLot.grader,
-          grade: primaryLot.grade ?? "",
-          cert_number: primaryLot.cert_number ?? "",
-          purchase_date: primaryLot.purchase_date,
-          purchase_price: primaryLot.unit_cost,
-          notes: card.notes ?? "",
-          current_value: "",
-        }
-      : emptyForm
-  );
+  const [form, setForm] = useState<CardFormData>(() => {
+    if (card && primaryLot) {
+      return {
+        player_name: card.player_name,
+        year: card.year,
+        card_type: card.card_type,
+        sport: card.sport,
+        card_number: card.card_number ?? "",
+        insert_parallel: card.insert_parallel ?? "",
+        grader:
+          primaryLot.grader === "Ungraded" ? "Raw" : primaryLot.grader,
+        grade: primaryLot.grade ?? "",
+        cert_number: primaryLot.cert_number ?? "",
+        purchase_date: primaryLot.purchase_date,
+        purchase_price: primaryLot.unit_cost,
+        notes: card.notes ?? "",
+        current_value: "",
+      };
+    }
+    if (mode === "create" && initialForm) {
+      return { ...emptyForm, ...initialForm };
+    }
+    return emptyForm;
+  });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +166,16 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
+      {mode === "create" && onBackToSearch && (
+        <button
+          type="button"
+          onClick={onBackToSearch}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          ← Back to search
+        </button>
+      )}
+
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
