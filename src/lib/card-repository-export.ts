@@ -1,13 +1,21 @@
 import * as XLSX from "xlsx";
 import { CARD_REPOSITORY_IMPORT_COLUMNS } from "@/lib/card-repository-import";
-import type { CardRepositoryExportRow } from "@/types/card-repository";
+import type { CardRepositoryExportRow, CardRepositorySetSummary } from "@/types/card-repository";
 
 function sanitizeFilename(value: string): string {
   return value.replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").trim();
 }
 
+export function buildCardRepositoryExportFilename(set: CardRepositorySetSummary): string {
+  return (
+    sanitizeFilename(
+      `${set.year} ${set.category} ${set.manufacturer} ${set.brand} ${set.cardSet}`
+    ) || "card-set"
+  );
+}
+
 export function downloadCardRepositorySetExcel(
-  setLabel: string,
+  set: CardRepositorySetSummary,
   cards: CardRepositoryExportRow[]
 ) {
   const rows: (string | number)[][] = [
@@ -31,6 +39,6 @@ export function downloadCardRepositorySetExcel(
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Cards");
 
-  const filename = `${sanitizeFilename(setLabel) || "card-set"}.xlsx`;
+  const filename = `${buildCardRepositoryExportFilename(set)}.xlsx`;
   XLSX.writeFile(workbook, filename);
 }

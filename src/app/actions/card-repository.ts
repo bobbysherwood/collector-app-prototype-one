@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { sortByCardNumber } from "@/lib/card-number-order";
 import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
 import type {
@@ -166,6 +167,15 @@ export async function importCardRepositoryEntries(
     return { error: "No rows were imported.", rowErrors };
   }
 
+  if (imported === 0 && skipped > 0) {
+    return {
+      error: `This card set already exists in the repository. No new cards were imported (${skipped} duplicate${skipped === 1 ? "" : "s"} skipped).`,
+      imported,
+      skipped,
+      rowErrors,
+    };
+  }
+
   return { imported, skipped, rowErrors };
 }
 
@@ -208,28 +218,28 @@ export async function getCardRepositorySetExportRows(set: CardRepositorySetKey) 
     .eq("year", set.year)
     .eq("manufacturer", set.manufacturer)
     .eq("brand", set.brand)
-    .eq("card_set", set.cardSet)
-    .order("card_number")
-    .order("player");
+    .eq("card_set", set.cardSet);
 
   if (error) {
     return { error: error.message };
   }
 
   return {
-    rows: (data ?? []).map((row) => ({
-      category: row.category,
-      year: row.year,
-      manufacturer: row.manufacturer,
-      brand: row.brand,
-      cardSetCategory: row.card_set_category,
-      cardSet: row.card_set,
-      cardNumber: row.card_number,
-      player: row.player,
-      parallel: row.parallel,
-      serialNumber: row.serial_number,
-      releaseDate: row.release_date,
-    })),
+    rows: sortByCardNumber(
+      (data ?? []).map((row) => ({
+        category: row.category,
+        year: row.year,
+        manufacturer: row.manufacturer,
+        brand: row.brand,
+        cardSetCategory: row.card_set_category,
+        cardSet: row.card_set,
+        cardNumber: row.card_number,
+        player: row.player,
+        parallel: row.parallel,
+        serialNumber: row.serial_number,
+        releaseDate: row.release_date,
+      }))
+    ),
   };
 }
 
@@ -247,23 +257,23 @@ export async function listCardRepositoryCardsForSet(set: CardRepositorySetKey) {
     .eq("year", set.year)
     .eq("manufacturer", set.manufacturer)
     .eq("brand", set.brand)
-    .eq("card_set", set.cardSet)
-    .order("card_number")
-    .order("player");
+    .eq("card_set", set.cardSet);
 
   if (error) {
     return { error: error.message };
   }
 
   return {
-    cards: (data ?? []).map((row) => ({
-      id: row.id,
-      cardSetCategory: row.card_set_category,
-      cardNumber: row.card_number,
-      player: row.player,
-      parallel: row.parallel,
-      serialNumber: row.serial_number,
-      releaseDate: row.release_date,
-    })),
+    cards: sortByCardNumber(
+      (data ?? []).map((row) => ({
+        id: row.id,
+        cardSetCategory: row.card_set_category,
+        cardNumber: row.card_number,
+        player: row.player,
+        parallel: row.parallel,
+        serialNumber: row.serial_number,
+        releaseDate: row.release_date,
+      }))
+    ),
   };
 }

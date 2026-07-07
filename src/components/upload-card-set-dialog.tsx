@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Upload } from "lucide-react";
+import { ChevronDown, Upload } from "lucide-react";
 import { importCardRepositoryEntries } from "@/app/actions/card-repository";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,24 @@ import {
 const REQUIRED_COLUMNS = CARD_REPOSITORY_IMPORT_COLUMNS.slice(0, 8);
 const OPTIONAL_COLUMNS = CARD_REPOSITORY_IMPORT_COLUMNS.slice(8);
 const OPTIONAL_COLUMN_SET = new Set<string>(OPTIONAL_COLUMNS);
+
+function ImportHelpSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group border-b border-border/80 py-2 last:border-b-0">
+      <summary className="flex cursor-pointer list-none items-center justify-between font-medium [&::-webkit-details-marker]:hidden">
+        {title}
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="pt-2">{children}</div>
+    </details>
+  );
+}
 
 export function UploadCardSetDialog() {
   const router = useRouter();
@@ -70,18 +88,10 @@ export function UploadCardSetDialog() {
         return;
       }
 
-      const messages = [
-        `Imported ${result.imported ?? 0} card${result.imported === 1 ? "" : "s"}.`,
-      ];
-      if ((result.skipped ?? 0) > 0) {
-        messages.push(`Skipped ${result.skipped} duplicate${result.skipped === 1 ? "" : "s"}.`);
-      }
-
-      setImportMessage(messages.join(" "));
-      setImportDetails([...parsed.errors, ...(result.rowErrors ?? [])]);
-
       if ((result.imported ?? 0) > 0) {
         router.refresh();
+        resetState();
+        setOpen(false);
       }
     } catch (importError) {
       setError(
@@ -91,10 +101,6 @@ export function UploadCardSetDialog() {
       );
     } finally {
       setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      setSelectedFileName(null);
     }
   }
 
@@ -124,21 +130,19 @@ export function UploadCardSetDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <section className="space-y-4 rounded-xl border border-border/80 bg-muted/20 p-4 text-sm">
-          <div>
-            <h3 className="font-medium">File requirements</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+        <section className="rounded-xl border border-border/80 bg-muted/20 px-4 text-sm">
+          <ImportHelpSection title="File requirements">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>Accepted file types: <span className="text-foreground">.xlsx</span> and <span className="text-foreground">.xls</span></li>
               <li>Use the first worksheet in the workbook</li>
               <li>The first row may be a header row (recommended)</li>
               <li>Empty rows are ignored</li>
               <li>Up to 5,000 card rows per upload</li>
             </ul>
-          </div>
+          </ImportHelpSection>
 
-          <div>
-            <h3 className="font-medium">Column format</h3>
-            <p className="mt-1 text-muted-foreground">
+          <ImportHelpSection title="Column format">
+            <p className="text-muted-foreground">
               Columns must appear in this exact order, left to right:
             </p>
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
@@ -149,11 +153,10 @@ export function UploadCardSetDialog() {
                 </li>
               ))}
             </ol>
-          </div>
+          </ImportHelpSection>
 
-          <div>
-            <h3 className="font-medium">Validation rules</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+          <ImportHelpSection title="Validation rules">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>
                 Required fields: {REQUIRED_COLUMNS.join(", ")}
               </li>
@@ -167,7 +170,7 @@ export function UploadCardSetDialog() {
               <li>Duplicate rows in the file or database are skipped during import</li>
               <li>A unique card ID is generated automatically for each new row</li>
             </ul>
-          </div>
+          </ImportHelpSection>
         </section>
 
         <section className="space-y-3">

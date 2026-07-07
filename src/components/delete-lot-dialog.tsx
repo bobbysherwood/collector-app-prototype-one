@@ -13,29 +13,28 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { deleteCard } from "@/app/actions/cards";
-import type { Card } from "@/types/card";
-import { cardTitle } from "@/types/card";
+import { deleteLot } from "@/app/actions/cards";
+import type { Asset, Lot } from "@/types/card";
+import { cardTitle, gradeLabel } from "@/types/card";
 import { cn } from "@/lib/utils";
 
-interface DeleteCardDialogProps {
-  card: Card;
+interface DeleteLotDialogProps {
+  asset: Asset;
+  lot: Lot;
   compact?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   showTrigger?: boolean;
-  /** Where to navigate after a successful delete. Defaults to /holdings. */
-  redirectTo?: string;
 }
 
-export function DeleteCardDialog({
-  card,
+export function DeleteLotDialog({
+  asset,
+  lot,
   compact = false,
   open: controlledOpen,
   onOpenChange,
   showTrigger = true,
-  redirectTo = "/holdings",
-}: DeleteCardDialogProps) {
+}: DeleteLotDialogProps) {
   const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -47,8 +46,8 @@ export function DeleteCardDialog({
     setDeleting(true);
     setError(null);
 
-    const result = await deleteCard(card.id);
-    if (result?.error) {
+    const result = await deleteLot(lot.id);
+    if (result.error) {
       setError(result.error);
       setDeleting(false);
       return;
@@ -56,8 +55,12 @@ export function DeleteCardDialog({
 
     setOpen(false);
     setDeleting(false);
-    router.push(redirectTo);
-    router.refresh();
+
+    if (result.assetDeleted) {
+      router.push("/holdings");
+    } else {
+      router.refresh();
+    }
   }
 
   return (
@@ -77,7 +80,7 @@ export function DeleteCardDialog({
               variant={compact ? "ghost" : "destructive"}
               size={compact ? "icon-sm" : "default"}
               className={cn(compact && "text-destructive hover:text-destructive")}
-              aria-label="Delete asset"
+              aria-label="Delete lot"
             />
           }
         >
@@ -87,10 +90,11 @@ export function DeleteCardDialog({
       )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete card?</DialogTitle>
+          <DialogTitle>Delete acquisition?</DialogTitle>
           <DialogDescription>
-            This will permanently remove {cardTitle(card)} from your collection.
-            This action cannot be undone.
+            This will permanently remove this {gradeLabel(lot)} copy of{" "}
+            {cardTitle(asset)} (purchased {lot.purchase_date}). Other copies of
+            this card will not be affected. This action cannot be undone.
           </DialogDescription>
         </DialogHeader>
         {error && <p className="text-sm text-destructive">{error}</p>}
