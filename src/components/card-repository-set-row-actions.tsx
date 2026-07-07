@@ -55,7 +55,7 @@ export function CardRepositorySetRowActions({
       return;
     }
 
-    downloadCardRepositorySetExcel(`${set.year} ${set.cardSet}`, result.rows);
+    downloadCardRepositorySetExcel(set, result.rows);
     setExporting(false);
     setMenuOpen(false);
   }
