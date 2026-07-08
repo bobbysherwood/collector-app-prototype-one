@@ -145,7 +145,9 @@ export function AddCardSearchStep({
         )}
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
 
       {showNoResults && (
         <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center max-w-xl">
@@ -169,7 +171,6 @@ export function AddCardSearchStep({
           Type at least 2 characters to search.
         </p>
       )}
-
       <Button type="button" variant="outline" onClick={onAddManually}>
         Add manually
       </Button>
