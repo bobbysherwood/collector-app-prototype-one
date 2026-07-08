@@ -171,6 +171,9 @@ export function AddCardSearchStep({
           Type at least 2 characters to search.
         </p>
       )}
+      <Button type="button" variant="outline" onClick={onAddManually}>
+        Add manually
+      </Button>
     </div>
   );
 }

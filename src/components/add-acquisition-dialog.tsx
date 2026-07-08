@@ -23,7 +23,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { GRADERS, GRADES, isGradedGrader } from "@/lib/constants";
+import { isGradedGrader } from "@/lib/constants";
+import { usePickLists } from "@/components/pick-lists-provider";
 import type { Asset, Grader } from "@/types/card";
 import { cardTitle } from "@/types/card";
 
@@ -33,6 +34,9 @@ interface AddAcquisitionDialogProps {
 
 export function AddAcquisitionDialog({ asset }: AddAcquisitionDialogProps) {
   const router = useRouter();
+  const pickLists = usePickLists();
+  const graderOptions = pickLists.graders;
+  const gradeOptions = pickLists.grades;
   const [open, setOpen] = useState(false);
   const [purchaseDate, setPurchaseDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -187,7 +191,7 @@ export function AddAcquisitionDialog({ asset }: AddAcquisitionDialogProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {GRADERS.map((g) => (
+                      {graderOptions.map((g) => (
                         <SelectItem key={g} value={g}>
                           {g}
                         </SelectItem>
@@ -209,7 +213,7 @@ export function AddAcquisitionDialog({ asset }: AddAcquisitionDialogProps) {
                           <SelectValue placeholder="Select grade" />
                         </SelectTrigger>
                         <SelectContent>
-                          {GRADES.map((g) => (
+                          {gradeOptions.map((g) => (
                             <SelectItem key={g} value={g}>
                               {g}
                             </SelectItem>

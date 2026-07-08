@@ -19,13 +19,9 @@ import {
   updateCard,
   uploadCardImage,
 } from "@/app/actions/cards";
-import {
-  SPORTS,
-  GRADERS,
-  CARD_TYPES,
-  GRADES,
-  isGradedGrader,
-} from "@/lib/constants";
+import { isGradedGrader } from "@/lib/constants";
+import { mergeGradeOption, mergePickListOption } from "@/lib/pick-list-utils";
+import { usePickLists } from "@/components/pick-lists-provider";
 import type { CardFormData, Grader, Sport } from "@/types/card";
 
 interface CardFormProps {
@@ -60,11 +56,29 @@ export function CardForm({
   onBackToSearch,
 }: CardFormProps) {
   const router = useRouter();
+  const pickLists = usePickLists();
   const primaryLot =
     lots.length === 1
       ? lots[0]
       : lots.find((l) => l.quantity_remaining > 0) ?? lots[0];
   const canEditLotFields = mode === "create" || lots.length === 1;
+
+  const sportOptions = mergePickListOption(
+    pickLists.sports,
+    card?.sport
+  );
+  const cardTypeOptions = mergePickListOption(
+    pickLists.cardTypes,
+    card?.card_type
+  );
+  const graderOptions = mergePickListOption(
+    pickLists.graders,
+    primaryLot?.grader === "Ungraded" ? "Raw" : primaryLot?.grader
+  );
+  const gradeOptions = mergeGradeOption(
+    pickLists.grades,
+    primaryLot?.grade
+  );
 
   const [form, setForm] = useState<CardFormData>(() => {
     if (card && primaryLot) {
@@ -85,10 +99,27 @@ export function CardForm({
         current_value: "",
       };
     }
+
     if (mode === "create" && initialForm) {
-      return { ...emptyForm, ...initialForm };
+      return {
+        ...emptyForm,
+        card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
+        sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
+        grader: (pickLists.graders.includes("Raw")
+          ? "Raw"
+          : pickLists.graders[0] ?? "Raw") as Grader,
+        ...initialForm,
+      };
     }
-    return emptyForm;
+
+    return {
+      ...emptyForm,
+      card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
+      sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
+      grader: (pickLists.graders.includes("Raw")
+        ? "Raw"
+        : pickLists.graders[0] ?? "Raw") as Grader,
+    };
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
@@ -241,7 +272,7 @@ export function CardForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SPORTS.map((s) => (
+                  {sportOptions.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -260,7 +291,7 @@ export function CardForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CARD_TYPES.map((t) => (
+                  {cardTypeOptions.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>
@@ -312,7 +343,7 @@ export function CardForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {GRADERS.map((g) => (
+                        {graderOptions.map((g) => (
                           <SelectItem key={g} value={g}>
                             {g}
                           </SelectItem>
@@ -334,7 +365,7 @@ export function CardForm({
                             <SelectValue placeholder="Select grade" />
                           </SelectTrigger>
                           <SelectContent>
-                            {GRADES.map((g) => (
+                            {gradeOptions.map((g) => (
                               <SelectItem key={g} value={g}>
                                 {g}
                               </SelectItem>

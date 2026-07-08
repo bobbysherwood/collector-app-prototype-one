@@ -1,14 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { Library, Users } from "lucide-react";
+import { ClipboardList, Library, SlidersHorizontal, Users } from "lucide-react";
+import { AdminHoldingsPickListsPanel } from "@/components/admin-holdings-pick-lists-panel";
+import { AdminUserConfigurationsPanel } from "@/components/admin-user-configurations-panel";
 import { AdminCardRepositoryPanel } from "@/components/admin-card-repository-panel";
 import { AdminUsersTable } from "@/components/admin-users-table";
 import type { AdminUser } from "@/types/admin";
+import type { UserFeatureSettingsMap } from "@/types/ai-features";
+import type { AdminPickLists } from "@/types/pick-list";
 import type { CardRepositorySetSummary } from "@/types/card-repository";
 import { cn } from "@/lib/utils";
 
-type AdminSection = "users" | "card-repository";
+type AdminSection =
+  | "users"
+  | "card-repository"
+  | "user-configurations"
+  | "holdings-pick-lists";
 
 const NAV_ITEMS: { id: AdminSection; label: string; icon: React.ReactNode }[] = [
   { id: "users", label: "Users", icon: <Users className="h-4 w-4" /> },
@@ -17,14 +25,28 @@ const NAV_ITEMS: { id: AdminSection; label: string; icon: React.ReactNode }[] = 
     label: "Card Repository",
     icon: <Library className="h-4 w-4" />,
   },
+  {
+    id: "user-configurations",
+    label: "User Configurations",
+    icon: <SlidersHorizontal className="h-4 w-4" />,
+  },
+  {
+    id: "holdings-pick-lists",
+    label: "Holdings Pick Lists",
+    icon: <ClipboardList className="h-4 w-4" />,
+  },
 ];
 
 export function AdminScreen({
   users,
   cardRepositorySets,
+  userFeatureSettingsByUserId,
+  pickLists,
 }: {
   users: AdminUser[];
   cardRepositorySets: CardRepositorySetSummary[];
+  userFeatureSettingsByUserId: UserFeatureSettingsMap;
+  pickLists: AdminPickLists;
 }) {
   const [section, setSection] = useState<AdminSection>("users");
 
@@ -75,6 +97,13 @@ export function AdminScreen({
             </div>
           ) : section === "card-repository" ? (
             <AdminCardRepositoryPanel sets={cardRepositorySets} />
+          ) : section === "user-configurations" ? (
+            <AdminUserConfigurationsPanel
+              users={users}
+              initialSettingsByUserId={userFeatureSettingsByUserId}
+            />
+          ) : section === "holdings-pick-lists" ? (
+            <AdminHoldingsPickListsPanel initialPickLists={pickLists} />
           ) : null}
         </section>
       </div>
