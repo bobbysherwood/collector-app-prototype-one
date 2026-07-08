@@ -63,23 +63,6 @@ export function CardForm({
       : lots.find((l) => l.quantity_remaining > 0) ?? lots[0];
   const canEditLotFields = mode === "create" || lots.length === 1;
 
-  const sportOptions = mergePickListOption(
-    pickLists.sports,
-    card?.sport
-  );
-  const cardTypeOptions = mergePickListOption(
-    pickLists.cardTypes,
-    card?.card_type
-  );
-  const graderOptions = mergePickListOption(
-    pickLists.graders,
-    primaryLot?.grader === "Ungraded" ? "Raw" : primaryLot?.grader
-  );
-  const gradeOptions = mergeGradeOption(
-    pickLists.grades,
-    primaryLot?.grade
-  );
-
   const [form, setForm] = useState<CardFormData>(() => {
     if (card && primaryLot) {
       return {
@@ -99,27 +82,10 @@ export function CardForm({
         current_value: "",
       };
     }
-
     if (mode === "create" && initialForm) {
-      return {
-        ...emptyForm,
-        card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
-        sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
-        grader: (pickLists.graders.includes("Raw")
-          ? "Raw"
-          : pickLists.graders[0] ?? "Raw") as Grader,
-        ...initialForm,
-      };
+      return { ...emptyForm, ...initialForm };
     }
-
-    return {
-      ...emptyForm,
-      card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
-      sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
-      grader: (pickLists.graders.includes("Raw")
-        ? "Raw"
-        : pickLists.graders[0] ?? "Raw") as Grader,
-    };
+    return emptyForm;
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);

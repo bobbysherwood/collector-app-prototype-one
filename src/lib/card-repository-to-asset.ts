@@ -1,6 +1,7 @@
 import { CARD_TYPES, SPORTS } from "@/lib/constants";
-import type { CardFormData, Sport } from "@/types/card";
+import type { CardFormData } from "@/types/card";
 import type { CardRepositorySearchResult } from "@/types/card-repository";
+import type { Sport } from "@/types/card";
 
 export function mapRepositoryCategoryToSport(category: string): Sport {
   const normalized = category.trim();
