@@ -1,10 +1,16 @@
+import { Suspense } from "react";
 import { PortfolioCharts } from "@/components/portfolio-charts";
-import { PortfolioInsights } from "@/components/portfolio-insights";
+import { PortfolioInsightsLoader } from "@/components/portfolio-insights-loader";
+import { PortfolioInsightsLoading } from "@/components/portfolio-insights-loading";
 import { PortfolioPerformanceLeaders } from "@/components/portfolio-performance-leaders";
+import { getAiFeatureSettings } from "@/lib/ai-feature-settings";
 import { getPortfolioChartData } from "@/lib/data";
 
 export default async function DashboardPage() {
-  const chartData = await getPortfolioChartData();
+  const [aiFeatureSettings, chartData] = await Promise.all([
+    getAiFeatureSettings(),
+    getPortfolioChartData(),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -22,7 +28,11 @@ export default async function DashboardPage() {
         valuations={chartData.valuations}
       />
 
-      <PortfolioInsights />
+      {aiFeatureSettings.portfolioInsightsEnabled ? (
+        <Suspense fallback={<PortfolioInsightsLoading />}>
+          <PortfolioInsightsLoader />
+        </Suspense>
+      ) : null}
 
       <PortfolioPerformanceLeaders
         topPerformers={chartData.topPerformers}

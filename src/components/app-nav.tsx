@@ -19,9 +19,15 @@ interface AppNavProps {
   email: string;
   displayName: string;
   isAdmin?: boolean;
+  showMarketResearch?: boolean;
 }
 
-export function AppNav({ email, displayName, isAdmin = false }: AppNavProps) {
+export function AppNav({
+  email,
+  displayName,
+  isAdmin = false,
+  showMarketResearch = true,
+}: AppNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const hideAddAsset =
@@ -58,15 +64,17 @@ export function AppNav({ email, displayName, isAdmin = false }: AppNavProps) {
               <Layers className="h-4 w-4" />
               <span className="hidden sm:inline">Holdings</span>
             </Button>
-            <Button
-              render={<Link href="/market-research" />}
-              nativeButton={false}
-              variant="ghost"
-              className="gap-2"
-            >
-              <LineChart className="h-4 w-4" />
-              <span className="hidden sm:inline">Market Research</span>
-            </Button>
+            {showMarketResearch ? (
+              <Button
+                render={<Link href="/market-research" />}
+                nativeButton={false}
+                variant="ghost"
+                className="gap-2"
+              >
+                <LineChart className="h-4 w-4" />
+                <span className="hidden sm:inline">Market Research</span>
+              </Button>
+            ) : null}
           </nav>
         </div>
         <div className="flex items-center gap-3">

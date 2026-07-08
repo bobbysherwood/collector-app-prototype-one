@@ -15,8 +15,8 @@ export const GRADERS: Grader[] = ["PSA", "BGS", "SGC", "CGC", "Raw"];
 
 export const GRADED_BY: Grader[] = ["PSA", "BGS", "SGC", "CGC"];
 
-export function isGradedGrader(grader: Grader): boolean {
-  return GRADED_BY.includes(grader);
+export function isGradedGrader(grader: string): boolean {
+  return grader !== "Raw" && grader !== "Ungraded";
 }
 
 export const CARD_TYPES = [

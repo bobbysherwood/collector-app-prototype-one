@@ -50,6 +50,21 @@ export type CardRepositorySetKey = Pick<
   "category" | "year" | "manufacturer" | "brand" | "cardSet"
 >;
 
+export interface CardRepositorySearchResult {
+  id: string;
+  category: string;
+  year: number;
+  manufacturer: string;
+  brand: string;
+  cardSetCategory: string;
+  cardSet: string;
+  cardNumber: string;
+  player: string;
+  parallel: string | null;
+  serialNumber: number | null;
+  releaseDate: string | null;
+}
+
 export const EMPTY_CARD_REPOSITORY_ENTRY: CardRepositoryEntryInput = {
   category: "",
   year: new Date().getFullYear(),

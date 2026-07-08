@@ -23,7 +23,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { GRADERS, GRADES, isGradedGrader } from "@/lib/constants";
+import { isGradedGrader } from "@/lib/constants";
+import { mergeGradeOption, mergePickListOption } from "@/lib/pick-list-utils";
+import { usePickLists } from "@/components/pick-lists-provider";
 import type { Grader, Lot } from "@/types/card";
 import { gradeLabel } from "@/types/card";
 
@@ -35,6 +37,10 @@ interface EditLotDialogProps {
 
 export function EditLotDialog({ lot, open, onOpenChange }: EditLotDialogProps) {
   const router = useRouter();
+  const pickLists = usePickLists();
+  const currentGrader = lot.grader === "Ungraded" ? "Raw" : lot.grader;
+  const graderOptions = mergePickListOption(pickLists.graders, currentGrader);
+  const gradeOptions = mergeGradeOption(pickLists.grades, lot.grade);
   const [purchaseDate, setPurchaseDate] = useState(lot.purchase_date);
   const [unitCost, setUnitCost] = useState(String(lot.unit_cost));
   const [grader, setGrader] = useState<Grader>(
@@ -165,7 +171,7 @@ export function EditLotDialog({ lot, open, onOpenChange }: EditLotDialogProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {GRADERS.map((g) => (
+                      {graderOptions.map((g) => (
                         <SelectItem key={g} value={g}>
                           {g}
                         </SelectItem>
@@ -187,7 +193,7 @@ export function EditLotDialog({ lot, open, onOpenChange }: EditLotDialogProps) {
                           <SelectValue placeholder="Select grade" />
                         </SelectTrigger>
                         <SelectContent>
-                          {GRADES.map((g) => (
+                          {gradeOptions.map((g) => (
                             <SelectItem key={g} value={g}>
                               {g}
                             </SelectItem>

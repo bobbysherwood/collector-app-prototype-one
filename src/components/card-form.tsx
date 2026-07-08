@@ -19,19 +19,17 @@ import {
   updateCard,
   uploadCardImage,
 } from "@/app/actions/cards";
-import {
-  SPORTS,
-  GRADERS,
-  CARD_TYPES,
-  GRADES,
-  isGradedGrader,
-} from "@/lib/constants";
+import { isGradedGrader } from "@/lib/constants";
+import { mergeGradeOption, mergePickListOption } from "@/lib/pick-list-utils";
+import { usePickLists } from "@/components/pick-lists-provider";
 import type { CardFormData, Grader, Sport } from "@/types/card";
 
 interface CardFormProps {
   card?: import("@/types/asset").Asset;
   lots?: import("@/types/asset").Lot[];
   mode: "create" | "edit";
+  initialForm?: Partial<CardFormData>;
+  onBackToSearch?: () => void;
 }
 
 const emptyForm: CardFormData = {
@@ -50,34 +48,79 @@ const emptyForm: CardFormData = {
   current_value: "",
 };
 
-export function CardForm({ card, lots = [], mode }: CardFormProps) {
+export function CardForm({
+  card,
+  lots = [],
+  mode,
+  initialForm,
+  onBackToSearch,
+}: CardFormProps) {
   const router = useRouter();
+  const pickLists = usePickLists();
   const primaryLot =
     lots.length === 1
       ? lots[0]
       : lots.find((l) => l.quantity_remaining > 0) ?? lots[0];
   const canEditLotFields = mode === "create" || lots.length === 1;
 
-  const [form, setForm] = useState<CardFormData>(
-    card && primaryLot
-      ? {
-          player_name: card.player_name,
-          year: card.year,
-          card_type: card.card_type,
-          sport: card.sport,
-          card_number: card.card_number ?? "",
-          insert_parallel: card.insert_parallel ?? "",
-          grader:
-            primaryLot.grader === "Ungraded" ? "Raw" : primaryLot.grader,
-          grade: primaryLot.grade ?? "",
-          cert_number: primaryLot.cert_number ?? "",
-          purchase_date: primaryLot.purchase_date,
-          purchase_price: primaryLot.unit_cost,
-          notes: card.notes ?? "",
-          current_value: "",
-        }
-      : emptyForm
+  const sportOptions = mergePickListOption(
+    pickLists.sports,
+    card?.sport
   );
+  const cardTypeOptions = mergePickListOption(
+    pickLists.cardTypes,
+    card?.card_type
+  );
+  const graderOptions = mergePickListOption(
+    pickLists.graders,
+    primaryLot?.grader === "Ungraded" ? "Raw" : primaryLot?.grader
+  );
+  const gradeOptions = mergeGradeOption(
+    pickLists.grades,
+    primaryLot?.grade
+  );
+
+  const [form, setForm] = useState<CardFormData>(() => {
+    if (card && primaryLot) {
+      return {
+        player_name: card.player_name,
+        year: card.year,
+        card_type: card.card_type,
+        sport: card.sport,
+        card_number: card.card_number ?? "",
+        insert_parallel: card.insert_parallel ?? "",
+        grader:
+          primaryLot.grader === "Ungraded" ? "Raw" : primaryLot.grader,
+        grade: primaryLot.grade ?? "",
+        cert_number: primaryLot.cert_number ?? "",
+        purchase_date: primaryLot.purchase_date,
+        purchase_price: primaryLot.unit_cost,
+        notes: card.notes ?? "",
+        current_value: "",
+      };
+    }
+
+    if (mode === "create" && initialForm) {
+      return {
+        ...emptyForm,
+        card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
+        sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
+        grader: (pickLists.graders.includes("Raw")
+          ? "Raw"
+          : pickLists.graders[0] ?? "Raw") as Grader,
+        ...initialForm,
+      };
+    }
+
+    return {
+      ...emptyForm,
+      card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
+      sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
+      grader: (pickLists.graders.includes("Raw")
+        ? "Raw"
+        : pickLists.graders[0] ?? "Raw") as Grader,
+    };
+  });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +197,16 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
+      {mode === "create" && onBackToSearch && (
+        <button
+          type="button"
+          onClick={onBackToSearch}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          ← Back to search
+        </button>
+      )}
+
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -219,7 +272,7 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SPORTS.map((s) => (
+                  {sportOptions.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -238,7 +291,7 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CARD_TYPES.map((t) => (
+                  {cardTypeOptions.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>
@@ -290,7 +343,7 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {GRADERS.map((g) => (
+                        {graderOptions.map((g) => (
                           <SelectItem key={g} value={g}>
                             {g}
                           </SelectItem>
@@ -312,7 +365,7 @@ export function CardForm({ card, lots = [], mode }: CardFormProps) {
                             <SelectValue placeholder="Select grade" />
                           </SelectTrigger>
                           <SelectContent>
-                            {GRADES.map((g) => (
+                            {gradeOptions.map((g) => (
                               <SelectItem key={g} value={g}>
                                 {g}
                               </SelectItem>
