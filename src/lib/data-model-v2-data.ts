@@ -328,18 +328,19 @@ export async function getDm2CardCountsBySetId(): Promise<Record<string, number>>
   const supabase = await createClient();
   const counts: Record<string, number> = {};
 
-  const rows = await fetchAllSupabasePages<{ card_set_id: string }>(
-    "dm2 card counts",
-    async (from, to) =>
-      supabase
-        .from("dm2_cards")
-        .select("card_set_id")
-        .order("card_set_id", { ascending: true })
-        .range(from, to)
+  const rows = await fetchAllSupabasePages<{
+    card_set_id: string;
+    card_count: number;
+  }>("dm2 card counts", async (from, to) =>
+    supabase
+      .from("dm2_card_counts_by_set")
+      .select("card_set_id, card_count")
+      .order("card_set_id", { ascending: true })
+      .range(from, to)
   );
 
   for (const row of rows) {
-    counts[row.card_set_id] = (counts[row.card_set_id] ?? 0) + 1;
+    counts[row.card_set_id] = row.card_count;
   }
 
   return counts;

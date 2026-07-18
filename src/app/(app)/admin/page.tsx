@@ -6,7 +6,6 @@ import { getCardRepositorySets } from "@/lib/card-repository-data";
 import { getAdminPickLists } from "@/lib/pick-list-data";
 import {
   getDm2Brands,
-  getDm2CardCountsBySetId,
   getDm2CardSets,
   getDm2CardSetCategories,
   getDm2CardSetNames,
@@ -33,7 +32,6 @@ export default async function AdminPage() {
     brands,
     parallels,
     cardSets,
-    cardCountsBySetId,
   ] = await Promise.all([
     getAdminUsers(),
     getCardRepositorySets(),
@@ -45,7 +43,6 @@ export default async function AdminPage() {
     getDm2Brands(),
     getDm2Parallels(),
     getDm2CardSets(),
-    getDm2CardCountsBySetId(),
   ]);
 
   return (
@@ -60,7 +57,6 @@ export default async function AdminPage() {
       brands={brands}
       parallels={parallels}
       cardSets={cardSets}
-      cardCountsBySetId={cardCountsBySetId}
     />
   );
 }

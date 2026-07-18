@@ -43,6 +43,7 @@ import {
   updateDm2Manufacturer,
   updateDm2Parallel,
   fetchDm2CardsForCardSet,
+  fetchDm2CardCountsBySetId,
 } from "@/app/actions/data-model-v2";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,7 +108,6 @@ export function AdminDataModelV2Panel({
   brands,
   parallels,
   cardSets,
-  cardCountsBySetId,
 }: {
   sports: PickListOption[];
   cardSetCategories: Dm2CardSetCategory[];
@@ -116,9 +116,12 @@ export function AdminDataModelV2Panel({
   brands: Dm2Brand[];
   parallels: Dm2Parallel[];
   cardSets: Dm2CardSet[];
-  cardCountsBySetId: Record<string, number>;
 }) {
   const router = useRouter();
+  const [cardCountsBySetId, setCardCountsBySetId] = useState<
+    Record<string, number>
+  >({});
+  const [cardCountsLoading, setCardCountsLoading] = useState(true);
   const [newLabel, setNewLabel] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +131,23 @@ export function AdminDataModelV2Panel({
 
   const sortedSports = useMemo(() => sortPickListOptions(sports), [sports]);
   const activeCount = sortedSports.filter((row) => row.active).length;
+
+  useEffect(() => {
+    let cancelled = false;
+    setCardCountsLoading(true);
+
+    void fetchDm2CardCountsBySetId().then((result) => {
+      if (cancelled) return;
+      if (result.counts) {
+        setCardCountsBySetId(result.counts);
+      }
+      setCardCountsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function runAction(
     action: () => Promise<{ error?: string }>,
@@ -409,6 +429,7 @@ export function AdminDataModelV2Panel({
       <CardSetSection
         rows={cardSets}
         cardCountsBySetId={cardCountsBySetId}
+        cardCountsLoading={cardCountsLoading}
         sports={sports}
         brands={brands}
         cardSetCategories={cardSetCategories}
@@ -1193,6 +1214,7 @@ function sortDm2CardsByParallelThenNumber(cards: Dm2Card[]): Dm2Card[] {
 function CardSetSection({
   rows,
   cardCountsBySetId,
+  cardCountsLoading = false,
   sports,
   brands,
   cardSetCategories,
@@ -1200,6 +1222,7 @@ function CardSetSection({
 }: {
   rows: Dm2CardSet[];
   cardCountsBySetId: Record<string, number>;
+  cardCountsLoading?: boolean;
   sports: PickListOption[];
   brands: Dm2Brand[];
   cardSetCategories: Dm2CardSetCategory[];
@@ -1371,7 +1394,11 @@ function CardSetSection({
                           {row.cardSetName}
                         </button>
                         <span className="ml-2 text-xs text-muted-foreground">
-                          ({cardCountsBySetId[row.id] ?? 0} cards)
+                          (
+                          {cardCountsLoading
+                            ? "…"
+                            : `${cardCountsBySetId[row.id] ?? 0} cards`}
+                          )
                         </span>
                       </TableCell>
                       <TableCell>
