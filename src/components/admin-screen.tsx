@@ -1,13 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Library, SlidersHorizontal, Users } from "lucide-react";
+import { ClipboardList, Database, Library, SlidersHorizontal, Users } from "lucide-react";
+import { AdminDataModelV2Panel } from "@/components/admin-data-model-v2-panel";
 import { AdminHoldingsPickListsPanel } from "@/components/admin-holdings-pick-lists-panel";
 import { AdminUserConfigurationsPanel } from "@/components/admin-user-configurations-panel";
 import { AdminCardRepositoryPanel } from "@/components/admin-card-repository-panel";
 import { AdminUsersTable } from "@/components/admin-users-table";
 import type { AdminUser } from "@/types/admin";
 import type { UserFeatureSettingsMap } from "@/types/ai-features";
+import type {
+  Dm2Brand,
+  Dm2CardSet,
+  Dm2CardSetCategory,
+  Dm2CardSetName,
+  Dm2Manufacturer,
+  Dm2Parallel,
+} from "@/types/data-model-v2";
 import type { AdminPickLists } from "@/types/pick-list";
 import type { CardRepositorySetSummary } from "@/types/card-repository";
 import { cn } from "@/lib/utils";
@@ -16,7 +25,8 @@ type AdminSection =
   | "users"
   | "card-repository"
   | "user-configurations"
-  | "holdings-pick-lists";
+  | "holdings-pick-lists"
+  | "data-model-v2";
 
 const NAV_ITEMS: { id: AdminSection; label: string; icon: React.ReactNode }[] = [
   { id: "users", label: "Users", icon: <Users className="h-4 w-4" /> },
@@ -35,6 +45,11 @@ const NAV_ITEMS: { id: AdminSection; label: string; icon: React.ReactNode }[] = 
     label: "Holdings Pick Lists",
     icon: <ClipboardList className="h-4 w-4" />,
   },
+  {
+    id: "data-model-v2",
+    label: "Data Model v2",
+    icon: <Database className="h-4 w-4" />,
+  },
 ];
 
 export function AdminScreen({
@@ -42,11 +57,25 @@ export function AdminScreen({
   cardRepositorySets,
   userFeatureSettingsByUserId,
   pickLists,
+  cardSetCategories,
+  cardSetNames,
+  manufacturers,
+  brands,
+  parallels,
+  cardSets,
+  cardCountsBySetId,
 }: {
   users: AdminUser[];
   cardRepositorySets: CardRepositorySetSummary[];
   userFeatureSettingsByUserId: UserFeatureSettingsMap;
   pickLists: AdminPickLists;
+  cardSetCategories: Dm2CardSetCategory[];
+  cardSetNames: Dm2CardSetName[];
+  manufacturers: Dm2Manufacturer[];
+  brands: Dm2Brand[];
+  parallels: Dm2Parallel[];
+  cardSets: Dm2CardSet[];
+  cardCountsBySetId: Record<string, number>;
 }) {
   const [section, setSection] = useState<AdminSection>("users");
 
@@ -104,9 +133,21 @@ export function AdminScreen({
             />
           ) : section === "holdings-pick-lists" ? (
             <AdminHoldingsPickListsPanel initialPickLists={pickLists} />
+          ) : section === "data-model-v2" ? (
+            <AdminDataModelV2Panel
+              sports={pickLists.sport}
+              cardSetCategories={cardSetCategories}
+              cardSetNames={cardSetNames}
+              manufacturers={manufacturers}
+              brands={brands}
+              parallels={parallels}
+              cardSets={cardSets}
+              cardCountsBySetId={cardCountsBySetId}
+            />
           ) : null}
         </section>
       </div>
     </div>
   );
 }
+
