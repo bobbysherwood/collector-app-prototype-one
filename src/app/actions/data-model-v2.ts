@@ -841,3 +841,15 @@ export async function fetchDm2CardsForCardSet(
   const cards = await getDm2CardsBySetId(trimmed);
   return { cards };
 }
+
+export async function fetchDm2CardCountsBySetId(): Promise<{
+  error?: string;
+  counts?: Record<string, number>;
+}> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const { getDm2CardCountsBySetId } = await import("@/lib/data-model-v2-data");
+  const counts = await getDm2CardCountsBySetId();
+  return { counts };
+}

@@ -63,7 +63,6 @@ export function AdminScreen({
   brands,
   parallels,
   cardSets,
-  cardCountsBySetId,
 }: {
   users: AdminUser[];
   cardRepositorySets: CardRepositorySetSummary[];
@@ -75,7 +74,6 @@ export function AdminScreen({
   brands: Dm2Brand[];
   parallels: Dm2Parallel[];
   cardSets: Dm2CardSet[];
-  cardCountsBySetId: Record<string, number>;
 }) {
   const [section, setSection] = useState<AdminSection>("users");
 
@@ -142,7 +140,6 @@ export function AdminScreen({
               brands={brands}
               parallels={parallels}
               cardSets={cardSets}
-              cardCountsBySetId={cardCountsBySetId}
             />
           ) : null}
         </section>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { LayoutDashboard, Layers, LineChart, Plus, LogOut, Shield, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +28,6 @@ export function AppNav({
   isAdmin = false,
   showMarketResearch = true,
 }: AppNavProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const hideAddAsset =
     pathname === "/cards/new" || /^\/cards\/[^/]+\/edit$/.test(pathname);
@@ -110,7 +109,7 @@ export function AppNav({
                 {isAdmin ? (
                   <DropdownMenuItem
                     className="cursor-pointer"
-                    onClick={() => router.push("/admin")}
+                    render={<Link href="/admin" />}
                   >
                     <Shield className="h-4 w-4" />
                     Admin Screen
@@ -118,7 +117,7 @@ export function AppNav({
                 ) : null}
                 <DropdownMenuItem
                   className="cursor-pointer"
-                  onClick={() => router.push("/profile")}
+                  render={<Link href="/profile" />}
                 >
                   <User className="h-4 w-4" />
                   Profile
