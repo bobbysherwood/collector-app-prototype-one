@@ -50,6 +50,7 @@ async function main() {
     card_number: "236",
     insert_parallel: null,
     image_path: null,
+    notes: null,
     user_id: "",
     created_at: "",
     updated_at: "",

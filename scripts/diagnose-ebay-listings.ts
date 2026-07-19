@@ -34,6 +34,7 @@ const brady: Asset = {
   card_number: "236",
   insert_parallel: null,
   image_path: null,
+  notes: null,
   created_at: "",
   updated_at: "",
 };
