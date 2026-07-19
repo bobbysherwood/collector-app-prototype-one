@@ -1,4 +1,7 @@
-import type { MarketSale } from "@/types/market-sales";
+import type { MarketListing, MarketSale } from "@/types/market-sales";
+
+/** Max listing price as a fraction above market value for a recommended buy. */
+export const RECOMMENDED_BUY_TOLERANCE = 0.05;
 
 export type MarketEstimateConfidence = "high" | "medium" | "low" | "none";
 
@@ -104,6 +107,16 @@ export function estimateMarketValue(
     auction_count: auctionCount,
     recent_comp_count: recentCompCount,
   };
+}
+
+/** Buy It Now listings at or up to 5% above estimated market value. */
+export function isRecommendedBuy(
+  listing: MarketListing,
+  marketValue: number | null
+): boolean {
+  if (marketValue == null || marketValue <= 0) return false;
+  if (listing.listing_type !== "buy_it_now") return false;
+  return listing.price <= marketValue * (1 + RECOMMENDED_BUY_TOLERANCE);
 }
 
 export const MARKET_ESTIMATE_CONFIDENCE_LABELS: Record<
