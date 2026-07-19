@@ -71,6 +71,14 @@ export function getMockMarketSales(
     { source: "ebay", sale_type: "buy_it_now", daysAgo: 64, priceFactor: 0.94 },
     { source: "ebay", sale_type: "auction", daysAgo: 78, priceFactor: 1.15 },
     { source: "fanatics_collect", sale_type: "auction", daysAgo: 89, priceFactor: 1.1, premium: 15 },
+    { source: "ebay", sale_type: "auction", daysAgo: 112, priceFactor: 1.01 },
+    { source: "fanatics_collect", sale_type: "buy_it_now", daysAgo: 138, priceFactor: 0.96, premium: 0 },
+    { source: "ebay", sale_type: "best_offer", daysAgo: 165, priceFactor: 1.09 },
+    { source: "fanatics_collect", sale_type: "auction", daysAgo: 198, priceFactor: 1.14, premium: 15 },
+    { source: "ebay", sale_type: "buy_it_now", daysAgo: 224, priceFactor: 0.92 },
+    { source: "ebay", sale_type: "auction", daysAgo: 271, priceFactor: 1.07 },
+    { source: "fanatics_collect", sale_type: "auction", daysAgo: 312, priceFactor: 1.19, premium: 15 },
+    { source: "ebay", sale_type: "auction", daysAgo: 348, priceFactor: 0.99 },
   ];
 
   const sales: MarketSale[] = templates.map((template, index) => {
@@ -111,6 +119,7 @@ export function getMockMarketSales(
 
   return {
     sales: sales.sort((a, b) => b.sale_date.localeCompare(a.sale_date)),
+    listings: [],
     summary: buildMarketSalesSummary(sales),
     as_of: null,
   };

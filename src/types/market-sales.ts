@@ -35,9 +35,29 @@ export interface MarketSalesSummary {
 
 export interface MarketSalesResult {
   sales: MarketSale[];
+  listings: MarketListing[];
   summary: MarketSalesSummary;
   /** ISO timestamp — populated when data is fetched from a provider. */
   as_of: string | null;
+}
+
+export type MarketListingType = "auction" | "buy_it_now";
+
+/** An active marketplace listing (auction or buy-it-now). */
+export interface MarketListing {
+  id: string;
+  source: MarketSaleSource;
+  title: string;
+  grader: Grader | null;
+  grade: string | null;
+  listing_type: MarketListingType;
+  /** Current bid for auctions, or buy-now price for fixed listings. */
+  price: number;
+  bid_count: number | null;
+  ends_at: string;
+  listing_url: string;
+  match_confidence: MarketSaleMatchConfidence;
+  currency: "USD";
 }
 
 export const MARKET_SALE_SOURCE_LABELS: Record<MarketSaleSource, string> = {
@@ -49,4 +69,9 @@ export const MARKET_SALE_TYPE_LABELS: Record<MarketSaleType, string> = {
   auction: "Auction",
   buy_it_now: "Buy It Now",
   best_offer: "Best Offer",
+};
+
+export const MARKET_LISTING_TYPE_LABELS: Record<MarketListingType, string> = {
+  auction: "Auction",
+  buy_it_now: "Buy It Now",
 };

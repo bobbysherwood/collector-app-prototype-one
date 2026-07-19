@@ -25,6 +25,7 @@ import { DeleteCardDialog } from "@/components/delete-card-dialog";
 import { LotAcquisitionsTable } from "@/components/lot-acquisitions-table";
 import { MarkCardSoldDialog } from "@/components/mark-card-sold-dialog";
 import type { Asset, Lot, CardSale, CardValuation } from "@/types/card";
+import type { MarketListing } from "@/types/market-sales";
 import {
   cardTitle,
   formatCurrency,
@@ -38,7 +39,7 @@ import {
   totalCostBasisAcquired,
   totalSoldQuantity,
 } from "@/types/card";
-import { getMockMarketSales } from "@/lib/market-sales";
+import { getMockMarketSales } from "@/lib/market-sales/mock-provider";
 import { MarketSalesSection } from "@/components/market-sales-section";
 import { groupValuationsByLot } from "@/lib/valuations";
 import { getImageUrl } from "@/lib/images";
@@ -48,9 +49,22 @@ interface CardDetailProps {
   lots: Lot[];
   sales: CardSale[];
   valuations: CardValuation[];
+  ebayListings: MarketListing[];
+  listingsAsOf: string | null;
+  listingsError?: string;
+  ebaySandboxMode?: boolean;
 }
 
-export function CardDetail({ asset, lots, sales, valuations }: CardDetailProps) {
+export function CardDetail({
+  asset,
+  lots,
+  sales,
+  valuations,
+  ebayListings,
+  listingsAsOf,
+  listingsError,
+  ebaySandboxMode,
+}: CardDetailProps) {
   const valuationsByLot = groupValuationsByLot(valuations);
   const imageUrl = getImageUrl(asset.image_path);
   const held = isAssetHeld(lots);
@@ -235,6 +249,10 @@ export function CardDetail({ asset, lots, sales, valuations }: CardDetailProps) 
         asset={asset}
         lots={lots}
         data={marketSales}
+        ebayListings={ebayListings}
+        listingsAsOf={listingsAsOf}
+        listingsError={listingsError}
+        ebaySandboxMode={ebaySandboxMode}
       />
 
       {sortedSales.length > 0 && (
