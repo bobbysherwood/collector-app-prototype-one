@@ -42,7 +42,8 @@ export async function getEbayListingsForAsset(
       search_query: null,
       from_cache: false,
       sandbox_mode: sandboxMode,
-      error: "eBay integration is not configured.",
+      error:
+        "eBay integration is not configured. Set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET in your deployment environment (e.g. Vercel → Settings → Environment Variables).",
     };
   }
 
