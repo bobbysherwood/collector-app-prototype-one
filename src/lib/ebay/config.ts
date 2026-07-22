@@ -10,7 +10,15 @@ export const EBAY_BROWSE_SCOPE =
 
 export function getEbayEnvironment(): EbayEnvironment {
   const value = process.env.EBAY_ENV?.trim().toLowerCase();
-  return value === "production" ? "production" : "sandbox";
+  if (value === "production") return "production";
+  if (value === "sandbox") return "sandbox";
+
+  // Fallback: infer from App ID when EBAY_ENV is unset (common deploy mistake).
+  const clientId = process.env.EBAY_CLIENT_ID?.trim() ?? "";
+  if (/-PRD-/i.test(clientId)) return "production";
+  if (/-SBX-/i.test(clientId)) return "sandbox";
+
+  return "sandbox";
 }
 
 export function getEbayApiBaseUrl(env = getEbayEnvironment()): string {
@@ -23,6 +31,13 @@ export function getEbayOAuthScopes(): string[] {
   const configured = process.env.EBAY_OAUTH_SCOPE?.trim();
   if (configured) return [configured];
   return [EBAY_BROWSE_SCOPE, EBAY_APPLICATION_SCOPE];
+}
+
+export function getMissingEbayConfigVars(): string[] {
+  const missing: string[] = [];
+  if (!process.env.EBAY_CLIENT_ID?.trim()) missing.push("EBAY_CLIENT_ID");
+  if (!process.env.EBAY_CLIENT_SECRET?.trim()) missing.push("EBAY_CLIENT_SECRET");
+  return missing;
 }
 
 export function getEbayCredentials():
