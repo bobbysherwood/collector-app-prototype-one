@@ -1,7 +1,7 @@
 import type { Asset } from "@/types/asset";
 import type { MarketListing } from "@/types/market-sales";
 import { searchEbayListingsForQuery } from "@/lib/ebay/browse-client";
-import { getEbayEnvironment, isEbayConfigured } from "@/lib/ebay/config";
+import { getEbayEnvironment, getMissingEbayConfigVars, isEbayConfigured } from "@/lib/ebay/config";
 import {
   getCachedEbayListings,
   upsertCachedEbayListings,
@@ -36,14 +36,14 @@ export async function getEbayListingsForAsset(
   }
 
   if (!isEbayConfigured()) {
+    const missing = getMissingEbayConfigVars().join(", ");
     return {
       listings: [],
       as_of: null,
       search_query: null,
       from_cache: false,
       sandbox_mode: sandboxMode,
-      error:
-        "eBay integration is not configured. Set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET in your deployment environment (e.g. Vercel → Settings → Environment Variables).",
+      error: `eBay integration is not configured. Missing: ${missing}. Add them in Vercel → Settings → Environment Variables (enable Preview), then redeploy.`,
     };
   }
 

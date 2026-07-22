@@ -1,5 +1,5 @@
 import { getEbayApplicationAccessToken } from "@/lib/ebay/auth";
-import { getEbayApiBaseUrl, type EbayEnvironment } from "@/lib/ebay/config";
+import { getEbayApiBaseUrl, getEbayEnvironment, type EbayEnvironment } from "@/lib/ebay/config";
 import type { EbayListingSearchQuery } from "@/lib/ebay/query-builder";
 
 export interface EbayPrice {
@@ -30,7 +30,7 @@ export async function searchEbayItemSummaries(
   query: EbayListingSearchQuery,
   options?: { env?: EbayEnvironment; offset?: number }
 ): Promise<EbayItemSummary[]> {
-  const env = options?.env;
+  const env = options?.env ?? getEbayEnvironment();
   const token = await getEbayApplicationAccessToken(env);
   const params = new URLSearchParams({
     q: query.q,
@@ -116,7 +116,7 @@ export async function getEbayItemById(
   listingId: string,
   options?: { env?: EbayEnvironment }
 ): Promise<EbayItemSummary | null> {
-  const env = options?.env;
+  const env = options?.env ?? getEbayEnvironment();
   const token = await getEbayApplicationAccessToken(env);
   const itemId = listingId.includes("|") ? listingId : `v1|${listingId}|0`;
 

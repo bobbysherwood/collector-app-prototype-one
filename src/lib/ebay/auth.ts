@@ -1,6 +1,7 @@
 import {
   getEbayApiBaseUrl,
   getEbayCredentials,
+  getEbayEnvironment,
   getEbayOAuthScopes,
   type EbayEnvironment,
 } from "@/lib/ebay/config";
@@ -20,6 +21,7 @@ export async function getEbayApplicationAccessToken(
     throw new Error("eBay credentials are not configured.");
   }
 
+  const resolvedEnv = env ?? getEbayEnvironment();
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAtMs > now + 60_000) {
     return cachedToken.token;
@@ -31,7 +33,7 @@ export async function getEbayApplicationAccessToken(
 
   for (const scope of getEbayOAuthScopes()) {
     const response = await fetch(
-      `${getEbayApiBaseUrl(env)}/identity/v1/oauth2/token`,
+      `${getEbayApiBaseUrl(resolvedEnv)}/identity/v1/oauth2/token`,
       {
         method: "POST",
         headers: {
@@ -62,6 +64,11 @@ export async function getEbayApplicationAccessToken(
 
     const body = await response.text();
     if (!body.includes("invalid_scope")) {
+      if (body.includes("invalid_client")) {
+        throw new Error(
+          `eBay OAuth failed (${response.status}): ${body}. Verify EBAY_CLIENT_ID and EBAY_CLIENT_SECRET match the same keyset, use production keys with EBAY_ENV=production (api.ebay.com), and remove any extra quotes/spaces in Vercel env values.`
+        );
+      }
       throw new Error(`eBay OAuth failed (${response.status}): ${body}`);
     }
   }
