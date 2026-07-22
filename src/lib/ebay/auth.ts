@@ -1,6 +1,7 @@
 import {
   getEbayApiBaseUrl,
   getEbayCredentials,
+  getEbayEnvironment,
   getEbayOAuthScopes,
   type EbayEnvironment,
 } from "@/lib/ebay/config";
