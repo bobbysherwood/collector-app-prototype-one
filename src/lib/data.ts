@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/types/user";
 import type {
@@ -30,7 +31,7 @@ export interface PortfolioData {
   heldLotPositions: HeldLotPosition[];
 }
 
-export async function getPortfolioData(): Promise<PortfolioData> {
+export const getPortfolioData = cache(async (): Promise<PortfolioData> => {
   const [assets, lots, sales, valuations] = await Promise.all([
     getAssets(),
     getLots(),
@@ -46,9 +47,9 @@ export async function getPortfolioData(): Promise<PortfolioData> {
     positions: buildAssetPositions(assets, lots),
     heldLotPositions: buildHeldLotPositions(assets, lots),
   };
-}
+});
 
-export async function getPortfolioChartData() {
+export const getPortfolioChartData = cache(async () => {
   const data = await getPortfolioData();
   const heldLotPositions = data.heldLotPositions;
   const performance = buildLotPerformanceLeaders(
@@ -62,7 +63,7 @@ export async function getPortfolioChartData() {
     heldPositions: data.positions.filter((p) => isAssetHeld(p.lots)),
     ...performance,
   };
-}
+});
 
 export function buildLotPerformanceLeaders(
   heldLotPositions: HeldLotPosition[],
@@ -114,7 +115,7 @@ export const buildAssetPerformanceLeaders = buildLotPerformanceLeaders;
 /** @deprecated Use buildLotPerformanceLeaders */
 export const buildCardPerformanceLeaders = buildLotPerformanceLeaders;
 
-export async function getAllSales(): Promise<CardSale[]> {
+export const getAllSales = cache(async (): Promise<CardSale[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("card_sales")
@@ -123,9 +124,9 @@ export async function getAllSales(): Promise<CardSale[]> {
 
   if (error) throw error;
   return (data ?? []) as CardSale[];
-}
+});
 
-export async function getAssets(): Promise<Asset[]> {
+export const getAssets = cache(async (): Promise<Asset[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("assets")
@@ -134,12 +135,12 @@ export async function getAssets(): Promise<Asset[]> {
 
   if (error) throw error;
   return (data ?? []) as Asset[];
-}
+});
 
 /** @deprecated Use getAssets */
 export const getCards = getAssets;
 
-export async function getLots(): Promise<Lot[]> {
+export const getLots = cache(async (): Promise<Lot[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("lots")
@@ -148,7 +149,7 @@ export async function getLots(): Promise<Lot[]> {
 
   if (error) throw error;
   return (data ?? []) as Lot[];
-}
+});
 
 export async function getAsset(id: string): Promise<Asset | null> {
   const supabase = await createClient();
@@ -189,7 +190,7 @@ export async function getSalesForAsset(assetId: string): Promise<CardSale[]> {
   return (data ?? []) as CardSale[];
 }
 
-export async function getAllValuations(): Promise<CardValuation[]> {
+export const getAllValuations = cache(async (): Promise<CardValuation[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("card_valuations")
@@ -198,7 +199,7 @@ export async function getAllValuations(): Promise<CardValuation[]> {
 
   if (error) throw error;
   return data as CardValuation[];
-}
+});
 
 export async function getValuationsForAsset(
   assetId: string
@@ -245,13 +246,13 @@ export async function getLatestValuationMap(): Promise<
   return buildLatestValuationMap(valuations);
 }
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   return user;
-}
+});
 
 export interface UserProfile {
   id: string;
@@ -260,13 +261,11 @@ export interface UserProfile {
   role: UserRole;
 }
 
-export async function getUserProfile(): Promise<UserProfile | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+export const getUserProfile = cache(async (): Promise<UserProfile | null> => {
+  const user = await getCurrentUser();
   if (!user) return null;
+
+  const supabase = await createClient();
 
   const { data: profile, error } = await supabase
     .from("profiles")
@@ -290,7 +289,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     displayName,
     role: (profile?.role as UserRole | undefined) ?? "user",
   };
-}
+});
 
 export {
   salesForAsset,

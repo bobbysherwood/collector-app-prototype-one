@@ -31,6 +31,7 @@ import {
   buildCatalogCardSetProfiles,
   getCatalogInsertSetNames,
 } from "@/lib/dm2-import-catalog-hints";
+import { parseDm2StructuredExcel } from "@/lib/dm2-structured-import";
 import {
   createCommitStatsCollector,
   duplicateEntityLabel,
@@ -159,6 +160,94 @@ async function loadCatalogContext(): Promise<Dm2ImportCatalogContext> {
   };
 }
 
+export async function processDm2StructuredImportFile(
+  file: Dm2ImportFileInput
+): Promise<{ error?: string; session?: Dm2ImportSession }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const byteLength = Buffer.from(file.contentBase64, "base64").byteLength;
+  if (byteLength > DM2_IMPORT_MAX_FILE_BYTES) {
+    return { error: `${file.fileName} exceeds the per-file size limit.` };
+  }
+
+  const extension = file.fileName.split(".").pop()?.toLowerCase();
+  if (extension !== "xlsx" && extension !== "xls") {
+    return {
+      error: "Structured upload requires an Excel file (.xlsx or .xls).",
+    };
+  }
+
+  const buffer = Buffer.from(file.contentBase64, "base64");
+  const parsed = parseDm2StructuredExcel(
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+  );
+
+  if (parsed.errors.length > 0 && parsed.rows.length === 0) {
+    return { error: parsed.errors.join("\n") };
+  }
+
+  if (parsed.rows.length > DM2_IMPORT_MAX_TOTAL_ROWS) {
+    return {
+      error: `Total rows (${parsed.rows.length}) exceed the ${DM2_IMPORT_MAX_TOTAL_ROWS} row limit.`,
+    };
+  }
+
+  const catalog = await loadCatalogContext();
+  const sessionId = randomUUID();
+  const extractedRows: Dm2ExtractedRow[] = parsed.rows.map((row) => ({
+    id: randomUUID(),
+    sourceFileName: file.fileName,
+    sourceRowIndex: row.sourceRowIndex,
+    sport: row.sport,
+    year: row.year,
+    manufacturer: row.manufacturer,
+    brand: row.brand,
+    cardSetCategory: row.cardSetCategory,
+    cardSetName: row.cardSetName,
+    cardNumber: row.cardNumber,
+    player: row.player,
+    parallel: row.parallel,
+    confidence: 1,
+    excluded: false,
+  }));
+
+  const session = buildDm2ImportSession({
+    id: sessionId,
+    files: [
+      {
+        fileName: file.fileName,
+        status: "success",
+        rowCount: extractedRows.length,
+        error: parsed.errors.length > 0 ? parsed.errors.join("\n") : undefined,
+      },
+    ],
+    contexts: [],
+    rows: extractedRows,
+    model: "structured",
+    promptVersion: "1.0",
+    catalog,
+    researchNotes: [
+      {
+        id: randomUUID(),
+        source: "catalog",
+        title: "Structured Excel import",
+        detail:
+          "Rows were loaded from a fixed-column Excel template without AI extraction.",
+      },
+    ],
+  });
+
+  if (parsed.errors.length > 0) {
+    return {
+      error: `Imported ${parsed.rows.length} row(s) with ${parsed.errors.length} validation warning(s). Review issues before commit.`,
+      session,
+    };
+  }
+
+  return { session };
+}
+
 export async function processDm2ImportFiles(
   files: Dm2ImportFileInput[]
 ): Promise<{ error?: string; session?: Dm2ImportSession }> {
@@ -194,9 +283,7 @@ export async function processDm2ImportFiles(
   const spreadsheetOnly = files.every((file) =>
     isSpreadsheetFile(file.fileName, file.mimeType)
   );
-  const catalogSummary = spreadsheetOnly
-    ? ""
-    : buildDm2CatalogSummary(catalog);
+  const catalogSummary = buildDm2CatalogSummary(catalog);
   const catalogInsertSetNames = getCatalogInsertSetNames(
     buildCatalogCardSetProfiles(catalog)
   );

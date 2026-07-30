@@ -10,6 +10,10 @@ import { mapEbayItemSummariesToMarketListings } from "@/lib/ebay/listing-mapper"
 import { buildEbayListingSearchQuery } from "@/lib/ebay/query-builder";
 import { fetchSandboxListingsViaSellBridge } from "@/lib/ebay/sandbox-bridge";
 
+function highConfidenceListings(listings: MarketListing[]): MarketListing[] {
+  return listings.filter((listing) => listing.match_confidence === "high");
+}
+
 export interface EbayListingsFetchResult {
   listings: MarketListing[];
   as_of: string | null;
@@ -27,7 +31,7 @@ export async function getEbayListingsForAsset(
   const cached = await getCachedEbayListings(asset.id);
   if (cached) {
     return {
-      listings: cached.listings,
+      listings: highConfidenceListings(cached.listings),
       as_of: cached.fetchedAt,
       search_query: cached.searchQuery,
       from_cache: true,
@@ -57,7 +61,9 @@ export async function getEbayListingsForAsset(
       summaries = bridgeSummaries;
     }
 
-    const listings = mapEbayItemSummariesToMarketListings(asset, summaries);
+    const listings = highConfidenceListings(
+      mapEbayItemSummariesToMarketListings(asset, summaries)
+    );
     const fetchedAt =
       (await upsertCachedEbayListings({
         assetId: asset.id,

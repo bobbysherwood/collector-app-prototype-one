@@ -36,20 +36,27 @@ export function repositoryCardToFormPrefill(
   card: CardRepositorySearchResult
 ): Pick<
   CardFormData,
-  "player_name" | "year" | "sport" | "card_type" | "card_number" | "insert_parallel" | "notes"
+  | "player_name"
+  | "year"
+  | "sport"
+  | "manufacturer"
+  | "brand"
+  | "card_set_category"
+  | "card_set_name"
+  | "card_number"
+  | "insert_parallel"
+  | "notes"
 > {
-  const notesParts = [
-    card.manufacturer ? `Manufacturer: ${card.manufacturer}` : null,
-    card.cardSet ? `Set: ${card.cardSet}` : null,
-  ].filter(Boolean);
-
   return {
     player_name: card.player,
     year: card.year,
     sport: mapRepositoryCategoryToSport(card.category),
-    card_type: mapRepositoryBrandToCardType(card.brand),
+    manufacturer: card.manufacturer,
+    brand: mapRepositoryBrandToCardType(card.brand),
+    card_set_category: card.cardSetCategory,
+    card_set_name: card.cardSet,
     card_number: card.cardNumber,
     insert_parallel: card.parallel ?? "",
-    notes: notesParts.join("\n"),
+    notes: "",
   };
 }

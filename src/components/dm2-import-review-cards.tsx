@@ -21,7 +21,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCardSetRowLabel } from "@/lib/dm2-import-card-sets";
+import {
+  formatCardSetRowLabel,
+} from "@/lib/dm2-import-card-sets";
 import {
   bulkUpdateDuplicateClusterParallel,
   bulkUpdateDuplicateIssueParallel,
@@ -132,11 +134,6 @@ function DuplicateBulkParallelPanel({
 
   if (clusters.length === 0) return null;
 
-  const sampleRow = session.rows.find((row) => !row.excluded);
-  const defaultParallelOptions = sampleRow
-    ? getDm2LookupFieldOptions(session, "parallel", sampleRow)
-    : getDm2LookupFieldOptions(session, "parallel");
-
   return (
     <div className="space-y-3 rounded-lg border border-border/80 bg-muted/20 p-3">
       <div>
@@ -149,6 +146,12 @@ function DuplicateBulkParallelPanel({
       </div>
       <div className="space-y-3">
         {clusters.map((cluster) => {
+          const sampleRow = session.rows.find((row) =>
+            cluster.duplicateRowIds.includes(row.id)
+          );
+          const clusterParallelOptions = sampleRow
+            ? getDm2LookupFieldOptions(session, "parallel", sampleRow)
+            : [];
           const selectedParallel =
             selectedParallelByKey[cluster.key] ?? EMPTY_SELECT;
           const includeAllRows = includeAllRowsByKey[cluster.key] ?? false;
@@ -200,7 +203,7 @@ function DuplicateBulkParallelPanel({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={EMPTY_SELECT}>—</SelectItem>
-                    {defaultParallelOptions.map((option) => (
+                    {clusterParallelOptions.map((option) => (
                       <SelectItem key={option} value={option}>
                         {option}
                       </SelectItem>
@@ -224,7 +227,10 @@ function DuplicateBulkParallelPanel({
               </label>
               <Button
                 size="sm"
-                disabled={selectedParallel === EMPTY_SELECT}
+                disabled={
+                  selectedParallel === EMPTY_SELECT ||
+                  clusterParallelOptions.length === 0
+                }
                 onClick={() => {
                   onSessionChange((current) =>
                     bulkUpdateDuplicateClusterParallel(
@@ -271,6 +277,10 @@ function DuplicateIssueGroup({
   const rowsShareSetParallel =
     rows.length > 0 &&
     rows.every((row) => cardSetParallelKey(row) === cardSetParallelKey(rows[0]));
+  const groupParallelOptions =
+    rows.length > 0
+      ? getDm2LookupFieldOptions(session, "parallel", rows[0])
+      : [];
 
   function handleResolve(action: "confirmed_duplicate" | "not_duplicate") {
     onSessionChange((current) =>
@@ -317,19 +327,19 @@ function DuplicateIssueGroup({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={EMPTY_SELECT}>—</SelectItem>
-                {getDm2LookupFieldOptions(session, "parallel", rows[0]).map(
-                  (option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  )
-                )}
+                {groupParallelOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <Button
             size="sm"
-            disabled={groupParallel === EMPTY_SELECT}
+            disabled={
+              groupParallel === EMPTY_SELECT || groupParallelOptions.length === 0
+            }
             onClick={() =>
               onSessionChange((current) =>
                 bulkUpdateDuplicateIssueParallel(current, issue, groupParallel)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImageUpload } from "@/components/image-upload";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,18 @@ import {
   uploadCardImage,
 } from "@/app/actions/cards";
 import { isGradedGrader } from "@/lib/constants";
+import {
+  assetToCardFormIdentity,
+  filterBrandNamesForManufacturer,
+  lookupNames,
+  validateCardIdentity,
+} from "@/lib/card-form-identity";
 import { mergeGradeOption, mergePickListOption } from "@/lib/pick-list-utils";
 import { usePickLists } from "@/components/pick-lists-provider";
 import type { CardFormData, Grader, Sport } from "@/types/card";
+import type { Dm2CardFormLookups } from "@/types/data-model-v2";
+
+const PARALLEL_NONE = "__none__";
 
 interface CardFormProps {
   card?: import("@/types/asset").Asset;
@@ -30,13 +39,17 @@ interface CardFormProps {
   mode: "create" | "edit";
   initialForm?: Partial<CardFormData>;
   onBackToSearch?: () => void;
+  dm2Lookups: Dm2CardFormLookups;
 }
 
 const emptyForm: CardFormData = {
   player_name: "",
   year: new Date().getFullYear(),
-  card_type: "Topps",
   sport: "Baseball",
+  manufacturer: "",
+  brand: "",
+  card_set_category: "",
+  card_set_name: "",
   card_number: "",
   insert_parallel: "",
   grader: "Raw",
@@ -54,6 +67,7 @@ export function CardForm({
   mode,
   initialForm,
   onBackToSearch,
+  dm2Lookups,
 }: CardFormProps) {
   const router = useRouter();
   const pickLists = usePickLists();
@@ -67,10 +81,6 @@ export function CardForm({
     pickLists.sports,
     card?.sport
   );
-  const cardTypeOptions = mergePickListOption(
-    pickLists.cardTypes,
-    card?.card_type
-  );
   const graderOptions = mergePickListOption(
     pickLists.graders,
     primaryLot?.grader === "Ungraded" ? "Raw" : primaryLot?.grader
@@ -83,19 +93,13 @@ export function CardForm({
   const [form, setForm] = useState<CardFormData>(() => {
     if (card && primaryLot) {
       return {
-        player_name: card.player_name,
-        year: card.year,
-        card_type: card.card_type,
-        sport: card.sport,
-        card_number: card.card_number ?? "",
-        insert_parallel: card.insert_parallel ?? "",
+        ...assetToCardFormIdentity(card),
         grader:
           primaryLot.grader === "Ungraded" ? "Raw" : primaryLot.grader,
         grade: primaryLot.grade ?? "",
         cert_number: primaryLot.cert_number ?? "",
         purchase_date: primaryLot.purchase_date,
         purchase_price: primaryLot.unit_cost,
-        notes: card.notes ?? "",
         current_value: "",
       };
     }
@@ -103,7 +107,6 @@ export function CardForm({
     if (mode === "create" && initialForm) {
       return {
         ...emptyForm,
-        card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
         sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
         grader: (pickLists.graders.includes("Raw")
           ? "Raw"
@@ -114,7 +117,6 @@ export function CardForm({
 
     return {
       ...emptyForm,
-      card_type: pickLists.cardTypes[0] ?? emptyForm.card_type,
       sport: (pickLists.sports[0] ?? emptyForm.sport) as Sport,
       grader: (pickLists.graders.includes("Raw")
         ? "Raw"
@@ -125,6 +127,33 @@ export function CardForm({
   const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const manufacturerOptions = useMemo(
+    () => lookupNames(dm2Lookups.manufacturers, form.manufacturer),
+    [dm2Lookups.manufacturers, form.manufacturer]
+  );
+  const brandOptions = useMemo(
+    () =>
+      filterBrandNamesForManufacturer(
+        dm2Lookups.brands,
+        dm2Lookups.manufacturers,
+        form.manufacturer,
+        form.brand
+      ),
+    [dm2Lookups.brands, dm2Lookups.manufacturers, form.manufacturer, form.brand]
+  );
+  const categoryOptions = useMemo(
+    () => lookupNames(dm2Lookups.cardSetCategories, form.card_set_category),
+    [dm2Lookups.cardSetCategories, form.card_set_category]
+  );
+  const cardSetNameOptions = useMemo(
+    () => lookupNames(dm2Lookups.cardSetNames, form.card_set_name),
+    [dm2Lookups.cardSetNames, form.card_set_name]
+  );
+  const parallelOptions = useMemo(
+    () => lookupNames(dm2Lookups.parallels, form.insert_parallel),
+    [dm2Lookups.parallels, form.insert_parallel]
+  );
 
   const isGraded = isGradedGrader(form.grader);
 
@@ -138,6 +167,12 @@ export function CardForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const identityError = validateCardIdentity(form);
+    if (identityError) {
+      setError(identityError);
+      return;
+    }
 
     if (canEditLotFields && isGraded) {
       if (!form.grade.trim()) {
@@ -237,87 +272,194 @@ export function CardForm({
         </div>
 
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="player_name">Player Name *</Label>
-              <Input
-                id="player_name"
-                required
-                value={form.player_name}
-                onChange={(e) => updateField("player_name", e.target.value)}
-                placeholder="e.g. Shohei Ohtani"
-              />
-            </div>
+          <div className="rounded-lg border border-border p-4 space-y-4">
+            <h3 className="text-sm font-medium">Card identity</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="player_name">Player *</Label>
+                <Input
+                  id="player_name"
+                  required
+                  value={form.player_name}
+                  onChange={(e) => updateField("player_name", e.target.value)}
+                  placeholder="e.g. Shohei Ohtani"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="year">Year *</Label>
-              <Input
-                id="year"
-                type="number"
-                required
-                min={1800}
-                max={2100}
-                value={form.year}
-                onChange={(e) => updateField("year", parseInt(e.target.value))}
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="year">Year *</Label>
+                <Input
+                  id="year"
+                  type="number"
+                  required
+                  min={1800}
+                  max={2100}
+                  value={form.year}
+                  onChange={(e) =>
+                    updateField("year", parseInt(e.target.value, 10) || emptyForm.year)
+                  }
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label>Sport *</Label>
-              <Select
-                value={form.sport}
-                onValueChange={(v) => v && updateField("sport", v as Sport)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {sportOptions.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label>Sport *</Label>
+                <Select
+                  value={form.sport}
+                  onValueChange={(v) => v && updateField("sport", v as Sport)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sportOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <Label>Card Type *</Label>
-              <Select
-                value={form.card_type}
-                onValueChange={(v) => v && updateField("card_type", v)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {cardTypeOptions.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label>Manufacturer *</Label>
+                <Select
+                  value={form.manufacturer}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    setForm((prev) => {
+                      const nextBrandOptions = filterBrandNamesForManufacturer(
+                        dm2Lookups.brands,
+                        dm2Lookups.manufacturers,
+                        value,
+                        prev.brand
+                      );
+                      return {
+                        ...prev,
+                        manufacturer: value,
+                        brand: nextBrandOptions.includes(prev.brand)
+                          ? prev.brand
+                          : "",
+                      };
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select manufacturer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {manufacturerOptions.map((manufacturer) => (
+                      <SelectItem key={manufacturer} value={manufacturer}>
+                        {manufacturer}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="card_number">Card Number</Label>
-              <Input
-                id="card_number"
-                value={form.card_number}
-                onChange={(e) => updateField("card_number", e.target.value)}
-                placeholder="e.g. 201"
-              />
-            </div>
+              <div className="space-y-2">
+                <Label>Brand *</Label>
+                <Select
+                  value={form.brand}
+                  onValueChange={(value) => value && updateField("brand", value)}
+                  disabled={!form.manufacturer}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        form.manufacturer
+                          ? "Select brand"
+                          : "Select manufacturer first"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {brandOptions.map((brand) => (
+                      <SelectItem key={brand} value={brand}>
+                        {brand}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="insert_parallel">Insert / Parallel</Label>
-              <Input
-                id="insert_parallel"
-                value={form.insert_parallel}
-                onChange={(e) => updateField("insert_parallel", e.target.value)}
-                placeholder="e.g. Silver Prizm, Refractor"
-              />
+              <div className="space-y-2">
+                <Label>Card set category *</Label>
+                <Select
+                  value={form.card_set_category}
+                  onValueChange={(v) =>
+                    v && updateField("card_set_category", v)
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categoryOptions.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="card_set_name">Card set name *</Label>
+                <Select
+                  value={form.card_set_name}
+                  onValueChange={(value) =>
+                    value && updateField("card_set_name", value)
+                  }
+                >
+                  <SelectTrigger id="card_set_name" className="w-full">
+                    <SelectValue placeholder="Select card set name" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cardSetNameOptions.map((cardSetName) => (
+                      <SelectItem key={cardSetName} value={cardSetName}>
+                        {cardSetName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="card_number">Card number *</Label>
+                <Input
+                  id="card_number"
+                  required
+                  value={form.card_number}
+                  onChange={(e) => updateField("card_number", e.target.value)}
+                  placeholder="e.g. 201"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Parallel</Label>
+                <Select
+                  value={form.insert_parallel || PARALLEL_NONE}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    updateField(
+                      "insert_parallel",
+                      value === PARALLEL_NONE ? "" : value
+                    );
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={PARALLEL_NONE}>None</SelectItem>
+                    {parallelOptions.map((parallel) => (
+                      <SelectItem key={parallel} value={parallel}>
+                        {parallel}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -456,6 +598,10 @@ export function CardForm({
               placeholder="Optional notes about this card..."
               rows={3}
             />
+            <p className="text-xs text-muted-foreground">
+              Manufacturer, category, and set name are saved separately from your
+              notes.
+            </p>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getPortfolioData } from "@/lib/data";
+import { getCurrentUser, getPortfolioData } from "@/lib/data";
 import {
   buildPortfolioInsightSnapshot,
   computePortfolioSnapshotHash,
@@ -43,10 +43,7 @@ function mapCacheRow(row: CachedInsightsRow): PortfolioInsightsResult {
 }
 
 export async function getPortfolioInsights(): Promise<PortfolioInsightsResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     return {
@@ -58,6 +55,7 @@ export async function getPortfolioInsights(): Promise<PortfolioInsightsResult> {
     };
   }
 
+  const supabase = await createClient();
   const { data: profile } = await supabase
     .from("profiles")
     .select("last_login_at")

@@ -1,19 +1,43 @@
-export const DM2_IMPORT_PROMPT_VERSION = "4.4";
+export const DM2_IMPORT_PROMPT_VERSION = "4.8";
 
 export const DM2_IMPORT_PARALLEL_SPLIT_GUIDANCE = `Parallel splitting (same rules for Base Set, Subset, and Insert):
 
 When CARD SET combines section name + parallel in one cell, ALWAYS extract the parallel — regardless of whether the section is Base Set, Subset, or Insert.
-- Multi-word parallels are common (Gold Vinyl, Gold International, Blue Glitter, Holo Fast Break, Pink Velocity). Preserve the full parallel name exactly.
-- Use the Parallels list from catalog context to recognize known parallel suffixes.
+- Each import row must have AT MOST ONE parallel — never split a single parallel into two fields.
+- Multi-word parallels are common (Gold Vinyl, Gold International, Blue Glitter, Holo Fast Break, Fast Break Pink, Fast Break Blue, Fast Break Holo). Preserve the full parallel name exactly.
+- Fast Break family: "Fast Break", "Fast Break Holo", "Fast Break Pink", and "Fast Break Blue" are each ONE parallel — never split into cardSetName ending with "Fast Break" plus parallel "Pink".
+- Use the Parallels list from catalog context to recognize known parallel suffixes; prefer the longest matching parallel suffix.
 - Insert names are often multi-word (Elite Dominators, Alter Ego, White Hot Rookies). The insert name is ONLY the insert title — everything after it in the combined cell is the parallel.
 - If multiple combined values share the same leading insert name, split them consistently:
   - "Elite Dominators Gold Vinyl" → category "Insert", name "Elite Dominators", parallel "Gold Vinyl"
   - "Elite Dominators Gold International" → category "Insert", name "Elite Dominators", parallel "Gold International"
   - "Elite Dominators Green" → category "Insert", name "Elite Dominators", parallel "Green"
   - "Elite Dominators Holo Fast Break" → category "Insert", name "Elite Dominators", parallel "Holo Fast Break"
+  - "Elite Dominators Fast Break" → category "Insert", name "Elite Dominators", parallel "Fast Break"
+  - "Elite Dominators Fast Break Pink" → category "Insert", name "Elite Dominators", parallel "Fast Break Pink"
+  - "Elite Dominators Fast Break Blue" → category "Insert", name "Elite Dominators", parallel "Fast Break Blue"
+  - "Elite Dominators Fast Break Holo" → category "Insert", name "Elite Dominators", parallel "Fast Break Holo"
+- WRONG anti-pattern: name "Elite Dominators Fast Break", parallel "Pink" — CORRECT: name "Elite Dominators", parallel "Fast Break Pink"
 - If you correctly split a parallel on one combined value (e.g., "Base Gold Vinyl" → parallel "Gold Vinyl"), apply the SAME parallel suffix to every other combined value ending with those words — including Inserts.
 - Never leave parallel null when the combined CARD SET cell contains insert name + parallel words.
 - Never include parallel words in cardSetName — cardSetName is ONLY the checklist section title (Base Set, Rated Rookies, Elite Dominators, Alter Ego, Downtown, etc.).
+- Set-name-only vocabulary: the words "Signature", "Signatures", "Autograph", and "Autographs" are NEVER parallels — they always belong in cardSetName as part of the checklist section title (e.g., "Rookie Signatures", "All Star Signatures", "Rookie Autographs", "Dual Autographs").
+  - "Rookie Signatures Gold" → category "Insert", name "Rookie Signatures", parallel "Gold"
+  - "Rookie Signatures" → category "Insert", name "Rookie Signatures", parallel null
+  - "Rookie Autographs Gold" → category "Insert", name "Rookie Autographs", parallel "Gold"
+  - "Rookie Autographs" → category "Insert", name "Rookie Autographs", parallel null
+  - WRONG: name "Rookie", parallel "Signatures", "Signatures Gold", "Autographs", or "Autographs Gold"
+  - When splitting a combined CARD SET value, stop parallel extraction before Signature/Autograph vocabulary; everything through that word stays in cardSetName.
+- No word repetition: cardSetName and parallel must NEVER share the same word (except Signature/Autograph vocabulary, which belongs only in cardSetName).
+  - When sibling combined CARD SET values share a leading title and differ only by trailing parallel words, use the shared title as cardSetName and the trailing variation as parallel — do NOT append parallel words to cardSetName.
+  - Parallel families often share a stem across siblings (Preview, Preview Flash, Preview Scope, Preview Wave).
+  - Example sibling values:
+    - "Optic Rated Rookies Preview" → name "Optic Rated Rookies", parallel "Preview"
+    - "Optic Rated Rookies Preview Flash" → name "Optic Rated Rookies", parallel "Preview Flash"
+    - "Optic Rated Rookies Preview Scope" → name "Optic Rated Rookies", parallel "Preview Scope"
+    - "Optic Rated Rookies Preview Wave" → name "Optic Rated Rookies", parallel "Preview Wave"
+  - WRONG: name "Optic Rated Rookies Preview", parallel "Flash" — CORRECT: name "Optic Rated Rookies", parallel "Preview Flash"
+  - WRONG: name "Elite Dominators Gold", parallel "Vinyl" — CORRECT: name "Elite Dominators", parallel "Gold Vinyl"
 
 Examples across categories:
 - "Base Gold Vinyl" → category "Base Set", name "Base Set", parallel "Gold Vinyl"
@@ -95,12 +119,20 @@ Combined CARD SET column — split every distinct value:
   - "Elite Dominators Gold Vinyl" → category "Insert", name "Elite Dominators", parallel "Gold Vinyl"
   - "Elite Dominators Gold International" → category "Insert", name "Elite Dominators", parallel "Gold International"
   - "Elite Dominators Holo Fast Break" → category "Insert", name "Elite Dominators", parallel "Holo Fast Break"
+  - "Elite Dominators Fast Break Pink" → category "Insert", name "Elite Dominators", parallel "Fast Break Pink"
+  - "Elite Dominators Fast Break" → category "Insert", name "Elite Dominators", parallel "Fast Break"
   - "Downtown Gold Vinyl" → category "Insert", name "Downtown", parallel "Gold Vinyl"
   - "Base Gold Vinyl" → category "Base Set", name "Base Set", parallel "Gold Vinyl"
   - "Base Aqua" → category "Base Set", name "Base Set", parallel "Aqua"
   - "Base Rated Rookies" → category "Subset", name "Rated Rookies", parallel null
   - "Base Rated Rookies Blue Glitter" → category "Subset", name "Rated Rookies", parallel "Blue Glitter"
   - "White Hot Rookies" → category "Insert", name "White Hot Rookies", parallel null (when insert-style numbering)
+  - "Rookie Signatures Gold" → category "Insert", name "Rookie Signatures", parallel "Gold"
+  - "Rookie Signatures" → category "Insert", name "Rookie Signatures", parallel null
+  - "Rookie Autographs Gold" → category "Insert", name "Rookie Autographs", parallel "Gold"
+  - "Rookie Autographs" → category "Insert", name "Rookie Autographs", parallel null
+  - "Optic Rated Rookies Preview" → category "Subset", name "Optic Rated Rookies", parallel "Preview"
+  - "Optic Rated Rookies Preview Flash" → category "Subset", name "Optic Rated Rookies", parallel "Preview Flash"
 - Preserve exact parallel wording (Gold Vinyl, Gold, Blue Glitter, Holo, Nebula, Green Shock, etc.). Never normalize.
 - You MUST return cardSetValueSplits with an entry for EVERY distinct combined CARD SET value listed in the user message, including cardSetCategory AND parallel for each split.`;
 

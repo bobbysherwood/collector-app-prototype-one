@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { CardFormData, Grader } from "@/types/card";
 import { isGradedGrader } from "@/lib/constants";
+import {
+  normalizeAssetFieldsFromForm,
+  validateCardIdentity,
+} from "@/lib/card-form-identity";
 import { insertInitialValuation } from "@/app/actions/valuations";
 
 function validateLotGrading(
@@ -16,18 +20,6 @@ function validateLotGrading(
   if (!grade.trim()) return "Grade is required for graded cards.";
   if (!certNumber.trim()) return "Cert number is required for graded cards.";
   return null;
-}
-
-function normalizeAssetFields(data: CardFormData) {
-  return {
-    player_name: data.player_name.trim(),
-    year: data.year,
-    card_type: data.card_type.trim(),
-    sport: data.sport,
-    card_number: data.card_number.trim() || null,
-    insert_parallel: data.insert_parallel.trim() || null,
-    notes: data.notes.trim() || null,
-  };
 }
 
 function normalizeLotGrading(data: CardFormData) {
@@ -54,6 +46,11 @@ export async function createCard(
     return { error: "Not authenticated" };
   }
 
+  const identityError = validateCardIdentity(data);
+  if (identityError) {
+    return { error: identityError };
+  }
+
   const gradingError = validateLotGrading(
     data.grader,
     data.grade,
@@ -63,7 +60,7 @@ export async function createCard(
     return { error: gradingError };
   }
 
-  const assetFields = normalizeAssetFields(data);
+  const assetFields = normalizeAssetFieldsFromForm(data);
   const lotGrading = normalizeLotGrading(data);
   const assetId = crypto.randomUUID();
 
@@ -129,6 +126,11 @@ export async function updateCard(
 
   const singleLot = lots?.length === 1;
 
+  const identityError = validateCardIdentity(data);
+  if (identityError) {
+    return { error: identityError };
+  }
+
   if (singleLot) {
     const gradingError = validateLotGrading(
       data.grader,
@@ -140,7 +142,7 @@ export async function updateCard(
     }
   }
 
-  const assetUpdate: Record<string, unknown> = normalizeAssetFields(data);
+  const assetUpdate: Record<string, unknown> = normalizeAssetFieldsFromForm(data);
   if (imagePath !== undefined) {
     assetUpdate.image_path = imagePath;
   }

@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardRowActions } from "@/components/card-row-actions";
+import { Dm2CardAttributeBadges } from "@/components/dm2-card-attribute-badges";
 import {
   Table,
   TableBody,
@@ -45,6 +46,7 @@ interface CardListProps {
   showSold?: boolean;
   /** @deprecated Use heldLots */
   positions?: AssetPosition[];
+  attributeNamesByAssetId?: Record<string, string[]>;
 }
 
 type SortColumn = "costBasis" | "currentValue" | "change";
@@ -161,6 +163,7 @@ export function CardList({
   latestValuations = {},
   salesByAsset = {},
   showSold = false,
+  attributeNamesByAssetId = {},
 }: CardListProps) {
   const heldGroups = useMemo(
     () => groupHeldLotsByIdentity(heldLots),
@@ -267,6 +270,7 @@ export function CardList({
                   asset={asset}
                   lots={lots}
                   sales={salesByAsset[asset.id] ?? []}
+                  attributeNames={attributeNamesByAssetId[asset.id] ?? []}
                 />
               ))
             : sortedHeldGroups.map((group) => (
@@ -276,6 +280,7 @@ export function CardList({
                   expanded={expandedGroups.has(group.key)}
                   onToggle={() => toggleGroup(group.key)}
                   latestValuations={latestValuations}
+                  attributeNamesByAssetId={attributeNamesByAssetId}
                 />
               ))}
         </TableBody>
@@ -289,11 +294,13 @@ function HeldCardGroupRows({
   expanded,
   onToggle,
   latestValuations,
+  attributeNamesByAssetId,
 }: {
   group: HeldCardGroup;
   expanded: boolean;
   onToggle: () => void;
   latestValuations: Record<string, CardValuation>;
+  attributeNamesByAssetId: Record<string, string[]>;
 }) {
   const { costBasis, marketValue, gainPercent } = sumGroupFinancials(
     group.items,
@@ -308,6 +315,7 @@ function HeldCardGroupRows({
         lot={lot}
         latestValuation={latestValuations[lot.id]}
         nested={false}
+        attributeNames={attributeNamesByAssetId[asset.id] ?? []}
       />
     );
   }
@@ -321,6 +329,7 @@ function HeldCardGroupRows({
         costBasis={costBasis}
         marketValue={marketValue}
         gainPercent={gainPercent}
+        attributeNames={attributeNamesByAssetId[group.asset.id] ?? []}
       />
       {expanded &&
         group.items.map(({ asset, lot }) => (
@@ -343,6 +352,7 @@ function HeldCardGroupSummaryRow({
   costBasis,
   marketValue,
   gainPercent,
+  attributeNames,
 }: {
   group: HeldCardGroup;
   expanded: boolean;
@@ -350,6 +360,7 @@ function HeldCardGroupSummaryRow({
   costBasis: number;
   marketValue: number | null;
   gainPercent: number | null;
+  attributeNames: string[];
 }) {
   const { asset } = group;
   const imageUrl = getImageUrl(asset.image_path);
@@ -417,6 +428,7 @@ function HeldCardGroupSummaryRow({
                 </Badge>
               )}
             </div>
+            <Dm2CardAttributeBadges names={attributeNames} size="sm" className="mt-1" />
           </div>
         </div>
       </TableCell>
@@ -450,11 +462,13 @@ function HeldLotListRow({
   lot,
   latestValuation,
   nested,
+  attributeNames = [],
 }: {
   asset: Asset;
   lot: Lot;
   latestValuation?: CardValuation;
   nested: boolean;
+  attributeNames?: string[];
 }) {
   const imageUrl = getImageUrl(asset.image_path);
   const costBasis = lot.unit_cost;
@@ -520,6 +534,7 @@ function HeldLotListRow({
                     </Badge>
                   )}
                 </div>
+                <Dm2CardAttributeBadges names={attributeNames} size="sm" className="mt-1" />
               </>
             )}
           </div>
@@ -556,10 +571,12 @@ function SoldAssetListRow({
   asset,
   lots,
   sales,
+  attributeNames = [],
 }: {
   asset: Asset;
   lots: Lot[];
   sales: CardSale[];
+  attributeNames?: string[];
 }) {
   const imageUrl = getImageUrl(asset.image_path);
   const costBasis = lots.reduce((s, l) => s + l.unit_cost, 0);
@@ -608,6 +625,7 @@ function SoldAssetListRow({
                 </Badge>
               )}
             </div>
+            <Dm2CardAttributeBadges names={attributeNames} size="sm" className="mt-1" />
           </div>
         </Link>
       </TableCell>

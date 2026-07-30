@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_ACTIVE_PICK_LISTS } from "@/lib/pick-list-defaults";
 import {
@@ -88,13 +89,13 @@ async function fetchPickListRows(activeOnly: boolean): Promise<PickListOption[]>
   return (data ?? []).map(mapRow);
 }
 
-export async function getActivePickLists(): Promise<ActivePickLists> {
+export const getActivePickLists = cache(async (): Promise<ActivePickLists> => {
   const rows = await fetchPickListRows(true);
   if (rows.length === 0) {
     return DEFAULT_ACTIVE_PICK_LISTS;
   }
   return groupActiveOptions(rows);
-}
+});
 
 export async function getAdminPickLists(): Promise<AdminPickLists> {
   const rows = await fetchPickListRows(false);

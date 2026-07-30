@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -60,6 +60,7 @@ import {
 } from "@/lib/dm2-import-file-content";
 import { Dm2ImportReviewCardSets } from "@/components/dm2-import-review-card-sets";
 import { Dm2ImportCommitResultsDialog } from "@/components/dm2-import-commit-results-dialog";
+import { Dm2StructuredUploadDialog } from "@/components/dm2-structured-upload-dialog";
 import {
   Dm2ImportReviewCards,
   type CardReviewFilter,
@@ -91,6 +92,13 @@ import {
   updateDm2SessionContextField,
   type Dm2ReviewProgressStep,
 } from "@/lib/dm2-import-resolve";
+import {
+  dm2ImportDebugLog,
+  dm2ImportDebugWarn,
+  isDm2ImportDebugEnabled,
+  registerDm2ImportDebugConsoleHelpers,
+  summarizeDm2Proposals,
+} from "@/lib/dm2-import-debug";
 import { cn } from "@/lib/utils";
 import type {
   Dm2ImportCommitResult,
@@ -228,6 +236,16 @@ function applyBulkHighConfidence(session: Dm2ImportSession): Dm2ImportSession {
 export function Dm2AiLoaderDialog() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    registerDm2ImportDebugConsoleHelpers();
+    if (isDm2ImportDebugEnabled()) {
+      dm2ImportDebugLog(
+        "boot",
+        "AI Loader debug logging is active. Run enableDm2ImportDebug() in the console to trace Move Refs."
+      );
+    }
+  }, []);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
@@ -275,12 +293,37 @@ export function Dm2AiLoaderDialog() {
 
   function updateSession(
     updater: Dm2ImportSession | ((current: Dm2ImportSession) => Dm2ImportSession),
-    invalidateFrom?: Dm2ReviewProgressStep
+    invalidateFrom?: Dm2ReviewProgressStep,
+    debugScope?: string
   ) {
     setSession((current) => {
-      if (!current) return current;
+      if (!current) {
+        dm2ImportDebugWarn("session", "Update skipped: no active session", {
+          scope: debugScope,
+        });
+        return current;
+      }
+
       const next = typeof updater === "function" ? updater(current) : updater;
-      if (next === current) return current;
+      if (next === current) {
+        dm2ImportDebugWarn("session", "Update skipped: updater returned same session reference", {
+          scope: debugScope,
+          invalidateFrom,
+          proposalCount: current.proposals.length,
+          proposals: summarizeDm2Proposals(current.proposals),
+        });
+        return current;
+      }
+
+      dm2ImportDebugLog("session", "Session updated", {
+        scope: debugScope ?? "unspecified",
+        invalidateFrom,
+        proposalCountBefore: current.proposals.length,
+        proposalCountAfter: next.proposals.length,
+        rowCountBefore: current.rows.length,
+        rowCountAfter: next.rows.length,
+      });
+
       return invalidateFrom
         ? invalidateReviewProgressFrom(next, invalidateFrom)
         : next;
@@ -450,6 +493,19 @@ export function Dm2AiLoaderDialog() {
     setIssueFilter("all");
   }
 
+  async function handleStructuredSessionReady(
+    importSession: Dm2ImportSession,
+    importError?: string | null
+  ) {
+    const prepared = applyBulkHighConfidence(importSession);
+    setSession(prepared);
+    setReviewStep("lookups");
+    setLookupTypeFilter("all");
+    setReviewOpen(true);
+    setError(importError ?? null);
+    setCommitResult(null);
+  }
+
   async function handleProcessFiles() {
     if (selectedFiles.length === 0) return;
 
@@ -595,6 +651,12 @@ export function Dm2AiLoaderDialog() {
         </div>
       )}
 
+      <div className="flex flex-wrap gap-2">
+        <Dm2StructuredUploadDialog
+          disabled={processing || committing}
+          onSessionReady={handleStructuredSessionReady}
+        />
+
       <Dialog
         open={uploadOpen}
         onOpenChange={(open) => {
@@ -685,6 +747,7 @@ export function Dm2AiLoaderDialog() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
 
       <Dialog
         open={reviewOpen}
@@ -1031,7 +1094,7 @@ export function Dm2AiLoaderDialog() {
                                     : proposal.action
                                 }
                                 onValueChange={(value) => {
-                                  if (!session || !value) return;
+                                  if (!value) return;
                                   if (value === "clear_parallel") {
                                     const confirmed = window.confirm(
                                       `Remove parallel "${proposal.proposedName}" from ${proposal.referenceCount} card${
@@ -1040,29 +1103,32 @@ export function Dm2AiLoaderDialog() {
                                     );
                                     if (!confirmed) return;
                                     updateSession(
-                                      clearDm2ParallelProposal(session, proposal.id),
+                                      (current) =>
+                                        clearDm2ParallelProposal(current, proposal.id),
                                       "lookups"
                                     );
                                     return;
                                   }
                                   if (value === "create_new") {
                                     updateSession(
-                                      updateDm2ProposalAction(
-                                        session,
-                                        proposal.id,
-                                        "create_new"
-                                      ),
+                                      (current) =>
+                                        updateDm2ProposalAction(
+                                          current,
+                                          proposal.id,
+                                          "create_new"
+                                        ),
                                       "lookups"
                                     );
                                     return;
                                   }
                                   if (value === "pending") {
                                     updateSession(
-                                      updateDm2ProposalAction(
-                                        session,
-                                        proposal.id,
-                                        "pending"
-                                      ),
+                                      (current) =>
+                                        updateDm2ProposalAction(
+                                          current,
+                                          proposal.id,
+                                          "pending"
+                                        ),
                                       "lookups"
                                     );
                                     return;
@@ -1073,13 +1139,14 @@ export function Dm2AiLoaderDialog() {
                                       (item) => item.id === matchId
                                     );
                                     updateSession(
-                                      updateDm2ProposalAction(
-                                        session,
-                                        proposal.id,
-                                        "use_existing",
-                                        matchId,
-                                        candidate?.name ?? proposal.matchName
-                                      ),
+                                      (current) =>
+                                        updateDm2ProposalAction(
+                                          current,
+                                          proposal.id,
+                                          "use_existing",
+                                          matchId,
+                                          candidate?.name ?? proposal.matchName
+                                        ),
                                       "lookups"
                                     );
                                   }
@@ -1144,19 +1211,45 @@ export function Dm2AiLoaderDialog() {
                                           key={target.id}
                                           className="cursor-pointer"
                                           onClick={() => {
+                                            dm2ImportDebugLog(
+                                              "moveRefsUI",
+                                              "Move refs menu item clicked",
+                                              {
+                                                source: {
+                                                  id: proposal.id,
+                                                  name: proposal.proposedName,
+                                                  refs: proposal.referenceCount,
+                                                  entityType: proposal.entityType,
+                                                },
+                                                target: {
+                                                  id: target.id,
+                                                  name: target.proposedName,
+                                                  refs: target.referenceCount,
+                                                  entityType: target.entityType,
+                                                },
+                                              }
+                                            );
                                             const confirmed = window.confirm(
                                               `Move ${proposal.referenceCount} reference${
                                                 proposal.referenceCount === 1 ? "" : "s"
                                               } from "${proposal.proposedName}" to "${target.proposedName}"?\n\nThis removes the "${proposal.proposedName}" proposal.`
                                             );
-                                            if (!confirmed) return;
+                                            if (!confirmed) {
+                                              dm2ImportDebugLog(
+                                                "moveRefsUI",
+                                                "Move refs cancelled in confirm dialog"
+                                              );
+                                              return;
+                                            }
                                             updateSession(
-                                              mergeDm2ProposalReferences(
-                                                session,
-                                                proposal.id,
-                                                target.id
-                                              ),
-                                              "lookups"
+                                              (current) =>
+                                                mergeDm2ProposalReferences(
+                                                  current,
+                                                  proposal.id,
+                                                  target.id
+                                                ),
+                                              "lookups",
+                                              "moveRefs"
                                             );
                                           }}
                                         >

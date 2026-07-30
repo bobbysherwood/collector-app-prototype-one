@@ -25,6 +25,8 @@ export interface Asset {
   sport: Sport;
   card_number: string | null;
   insert_parallel: string | null;
+  /** Optional set name for marketplace search / match scoring (DM2 research assets). */
+  card_set_name?: string | null;
   image_path: string | null;
   notes: string | null;
   created_at: string;
@@ -83,8 +85,11 @@ export type Card = Asset;
 export interface CardFormData {
   player_name: string;
   year: number;
-  card_type: string;
   sport: Sport;
+  manufacturer: string;
+  brand: string;
+  card_set_category: string;
+  card_set_name: string;
   card_number: string;
   insert_parallel: string;
   grader: Grader;

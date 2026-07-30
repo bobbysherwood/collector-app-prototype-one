@@ -138,6 +138,24 @@ export function formatCardSetRowLabel(row: Dm2ExtractedRow): string {
   });
 }
 
+/** Parallel values present on rows in the same uploaded card set group. */
+export function getDm2ParallelOptionsForCardSet(
+  session: Dm2ImportSession,
+  row: Dm2ExtractedRow
+): string[] {
+  const setKey = cardSetGroupKeyFromRow(row);
+  const values = new Set<string>();
+
+  for (const importRow of session.rows) {
+    if (importRow.excluded) continue;
+    if (cardSetGroupKeyFromRow(importRow) !== setKey) continue;
+    const parallel = importRow.parallel?.trim();
+    if (parallel) values.add(parallel);
+  }
+
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+
 export function cardSetFieldLabel(field: CardSetGroupField): string {
   switch (field) {
     case "sport":

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeRpcRows } from "@/lib/supabase/rpc-rows";
 import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
 
@@ -547,6 +548,174 @@ export async function deleteDm2Parallel(id: string): Promise<{ error?: string }>
   return {};
 }
 
+export async function createDm2Attribute(input: {
+  name: string;
+}): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const name = normalizeName(input.name);
+  const validationError = validateName(name);
+  if (validationError) return { error: validationError };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("dm2_attributes").insert({
+    name,
+    active: true,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "An attribute with that name already exists." };
+    }
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+export async function updateDm2Attribute(input: {
+  id: string;
+  name: string;
+}): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const name = normalizeName(input.name);
+  const validationError = validateName(name);
+  if (validationError) return { error: validationError };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("dm2_attributes")
+    .update({
+      name,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.id);
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "An attribute with that name already exists." };
+    }
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+export async function setDm2AttributeActive(input: {
+  id: string;
+  active: boolean;
+}): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("dm2_attributes")
+    .update({
+      active: input.active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+export async function deleteDm2Attribute(id: string): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("dm2_attributes").delete().eq("id", id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+export async function assignDm2CardAttribute(input: {
+  cardId: string;
+  attributeId: string;
+}): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  if (!input.cardId.trim() || !input.attributeId.trim()) {
+    return { error: "Card and attribute are required." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("dm2_card_attributes").insert({
+    card_id: input.cardId,
+    attribute_id: input.attributeId,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "That attribute is already assigned to this card." };
+    }
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+export async function updateDm2CardAttribute(input: {
+  id: string;
+  attributeId: string;
+}): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  if (!input.id.trim() || !input.attributeId.trim()) {
+    return { error: "Assignment and attribute are required." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("dm2_card_attributes")
+    .update({ attribute_id: input.attributeId })
+    .eq("id", input.id);
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "That attribute is already assigned to this card." };
+    }
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+export async function removeDm2CardAttribute(id: string): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("dm2_card_attributes").delete().eq("id", id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
 const MIN_YEAR = 1800;
 const MAX_YEAR = 2100;
 
@@ -818,10 +987,179 @@ export async function deleteDm2Card(id: string): Promise<{ error?: string }> {
   if (auth.error) return auth;
 
   const supabase = await createClient();
+  const { data: card, error: fetchError } = await supabase
+    .from("dm2_cards")
+    .select("image_path")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: fetchError.message };
+  }
+
   const { error } = await supabase.from("dm2_cards").delete().eq("id", id);
 
   if (error) {
     return { error: error.message };
+  }
+
+  if (card?.image_path) {
+    await supabase.storage
+      .from(DM2_CARD_IMAGES_BUCKET)
+      .remove([card.image_path]);
+  }
+
+  revalidateDataModelV2Paths();
+  return {};
+}
+
+const DM2_CARD_IMAGES_BUCKET = "dm2-card-images";
+
+const ALLOWED_DM2_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+function extensionForImageFile(file: File): string {
+  const fromName = file.name.split(".").pop()?.toLowerCase();
+  if (fromName === "jpg" || fromName === "jpeg") return "jpg";
+  if (fromName === "png") return "png";
+  if (fromName === "webp") return "webp";
+
+  switch (file.type) {
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    default:
+      return "jpg";
+  }
+}
+
+function dm2CardImageStoragePath(cardId: string, ext: string): string {
+  return `cards/${cardId}.${ext}`;
+}
+
+export async function uploadDm2CardImage(
+  cardId: string,
+  formData: FormData
+): Promise<{ error?: string; imagePath?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const trimmedId = cardId.trim();
+  if (!trimmedId) {
+    return { error: "Card id is required." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Image file is required." };
+  }
+
+  if (!ALLOWED_DM2_IMAGE_TYPES.has(file.type)) {
+    return { error: "Image must be JPG, PNG, or WebP." };
+  }
+
+  const supabase = await createClient();
+  const { data: existingCard, error: fetchError } = await supabase
+    .from("dm2_cards")
+    .select("image_path")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: fetchError.message };
+  }
+
+  if (!existingCard) {
+    return { error: "Card not found." };
+  }
+
+  const ext = extensionForImageFile(file);
+  const nextPath = dm2CardImageStoragePath(trimmedId, ext);
+
+  const { error: uploadError } = await supabase.storage
+    .from(DM2_CARD_IMAGES_BUCKET)
+    .upload(nextPath, file, {
+      upsert: true,
+      contentType: file.type,
+    });
+
+  if (uploadError) {
+    return { error: uploadError.message };
+  }
+
+  const { error: updateError } = await supabase
+    .from("dm2_cards")
+    .update({
+      image_path: nextPath,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (updateError) {
+    return { error: updateError.message };
+  }
+
+  const previousPath = existingCard.image_path;
+  if (previousPath && previousPath !== nextPath) {
+    await supabase.storage.from(DM2_CARD_IMAGES_BUCKET).remove([previousPath]);
+  }
+
+  revalidateDataModelV2Paths();
+  return { imagePath: nextPath };
+}
+
+export async function deleteDm2CardImage(
+  cardId: string
+): Promise<{ error?: string }> {
+  const auth = await requireAdmin();
+  if (auth.error) return auth;
+
+  const trimmedId = cardId.trim();
+  if (!trimmedId) {
+    return { error: "Card id is required." };
+  }
+
+  const supabase = await createClient();
+  const { data: card, error: fetchError } = await supabase
+    .from("dm2_cards")
+    .select("image_path")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: fetchError.message };
+  }
+
+  if (!card) {
+    return { error: "Card not found." };
+  }
+
+  if (!card.image_path) {
+    return {};
+  }
+
+  const { error: updateError } = await supabase
+    .from("dm2_cards")
+    .update({
+      image_path: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (updateError) {
+    return { error: updateError.message };
+  }
+
+  const { error: removeError } = await supabase.storage
+    .from(DM2_CARD_IMAGES_BUCKET)
+    .remove([card.image_path]);
+
+  if (removeError) {
+    return { error: removeError.message };
   }
 
   revalidateDataModelV2Paths();
@@ -852,4 +1190,183 @@ export async function fetchDm2CardCountsBySetId(): Promise<{
   const { getDm2CardCountsBySetId } = await import("@/lib/data-model-v2-data");
   const counts = await getDm2CardCountsBySetId();
   return { counts };
+}
+
+export async function searchDm2Cards(
+  query: string
+): Promise<{ error?: string; cards?: import("@/types/data-model-v2").Dm2CardSearchResult[] }> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return { cards: [] };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in to search the card catalog." };
+  }
+
+  const { data, error } = await supabase.rpc("search_dm2_cards", {
+    query: trimmed,
+    lim: 50,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return {
+    cards: normalizeRpcRows(data).map((row) =>
+      mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
+    ),
+  };
+}
+
+function mapDm2CardSearchRow(row: {
+  id: string;
+  card_set_id: string;
+  sport: string;
+  year: number;
+  manufacturer: string;
+  brand: string;
+  card_set_category: string;
+  card_set_name: string;
+  card_number: string;
+  player: string;
+  parallel: string | null;
+  image_path?: string | null;
+  attribute_names?: string[] | null;
+}): import("@/types/data-model-v2").Dm2CardSearchResult {
+  return {
+    id: row.id,
+    cardSetId: row.card_set_id,
+    sportName: row.sport,
+    year: row.year,
+    manufacturerName: row.manufacturer,
+    brandName: row.brand,
+    cardSetCategoryName: row.card_set_category,
+    cardSetName: row.card_set_name,
+    cardNumber: row.card_number,
+    player: row.player,
+    parallelName: row.parallel,
+    imagePath: row.image_path ?? null,
+    attributeNames: row.attribute_names ?? [],
+  };
+}
+
+export async function getDm2CardById(
+  cardId: string
+): Promise<{ error?: string; card?: import("@/types/data-model-v2").Dm2CardSearchResult }> {
+  const trimmed = cardId.trim();
+  if (!trimmed) {
+    return { error: "Card id is required." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in to view card details." };
+  }
+
+  const { data, error } = await supabase.rpc("get_dm2_card_by_id", {
+    card_id: trimmed,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  const rows = normalizeRpcRows(data);
+  if (rows.length === 0) {
+    return { error: "Card not found." };
+  }
+
+  return {
+    card: mapDm2CardSearchRow(
+      rows[0] as Parameters<typeof mapDm2CardSearchRow>[0]
+    ),
+  };
+}
+
+export async function searchDm2Players(
+  query: string
+): Promise<{ error?: string; players?: import("@/types/data-model-v2").Dm2PlayerSearchResult[] }> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return { players: [] };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in to search the card catalog." };
+  }
+
+  const { data, error } = await supabase.rpc("search_dm2_players", {
+    query: trimmed,
+    lim: 50,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return {
+    players: normalizeRpcRows(data).map(
+      (row: { player: string; card_count: number }) => ({
+        player: row.player,
+        cardCount: Number(row.card_count),
+      })
+    ),
+  };
+}
+
+export async function searchDm2Sports(
+  query: string
+): Promise<{ error?: string; sports?: import("@/types/data-model-v2").Dm2SportSearchResult[] }> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return { sports: [] };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in to search the card catalog." };
+  }
+
+  const { data, error } = await supabase.rpc("search_dm2_sports", {
+    query: trimmed,
+    lim: 50,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return {
+    sports: normalizeRpcRows(data).map(
+      (row: {
+        sport: string;
+        card_set_count: number;
+        card_count: number;
+      }) => ({
+        sport: row.sport,
+        cardSetCount: Number(row.card_set_count),
+        cardCount: Number(row.card_count),
+      })
+    ),
+  };
 }
