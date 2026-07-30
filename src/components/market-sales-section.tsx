@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ExternalLink, TrendingUp } from "lucide-react";
+import { ChevronDown, ExternalLink, LineChart, Minus, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +47,8 @@ import {
   MARKET_SALE_SOURCE_LABELS,
   MARKET_SALE_TYPE_LABELS,
 } from "@/types/market-sales";
-import { formatCurrency, gradeLabel } from "@/types/card";
+import { formatCurrency, formatPercent, gradeLabel } from "@/types/card";
+import type { MarketOutlook, MarketPredictionInsight } from "@/types/market-predictions";
 import { buildMarketSalesSummary } from "@/lib/market-sales/summary";
 import {
   formatListingEndsAt,
@@ -57,10 +58,15 @@ import {
 import { listingGradeFilterKey } from "@/lib/ebay/grade-parser";
 import {
   estimateMarketValue,
-  isRecommendedBuy,
   MARKET_ESTIMATE_CONFIDENCE_LABELS,
 } from "@/lib/market-sales/estimate";
 import type { MarketEstimateConfidence } from "@/lib/market-sales/estimate";
+import {
+  analyzeListing,
+  LISTING_PREDICTION_LABELS,
+  type ListingAnalysis,
+  type ListingValuePrediction,
+} from "@/lib/market-sales/listing-analysis";
 import {
   filterMarketSales,
   filterMarketListings,
@@ -70,7 +76,19 @@ import {
   type MarketSalesSourceFilter,
 } from "@/lib/market-sales/period-filter";
 import { MarketSalesChart } from "@/components/market-sales-chart";
+import { computeRecentSalesTrend } from "@/lib/market-sales/trend";
 import { cn } from "@/lib/utils";
+
+function filterSalesByGradeKeys(
+  sales: MarketSale[],
+  selectedGradeKeys: string[]
+): MarketSale[] {
+  if (selectedGradeKeys.length === 0) return [];
+  const selected = new Set(selectedGradeKeys);
+  return sales.filter((sale) =>
+    selected.has(listingGradeFilterKey(sale.grader, sale.grade))
+  );
+}
 
 type SourceFilter = MarketSalesSourceFilter;
 type PeriodFilter = MarketSalesPeriodFilter;
@@ -88,6 +106,8 @@ interface MarketSalesSectionProps {
   ebaySandboxMode?: boolean;
   /** When false, hides the preview banner on Sales History. */
   preview?: boolean;
+  /** Market research outlook; merges outlook UI into this section when set. */
+  predictions?: MarketPredictionInsight;
 }
 
 export function MarketSalesSection({
@@ -97,17 +117,41 @@ export function MarketSalesSection({
   listingsError,
   ebaySandboxMode = false,
   preview = true,
+  predictions,
 }: MarketSalesSectionProps) {
   const [activeTab, setActiveTab] = useState<MarketTab>("sales-history");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("90d");
   const [listingTypeFilter, setListingTypeFilter] =
     useState<ListingTypeFilter>("all");
-  const [selectedGradeKeys, setSelectedGradeKeys] = useState<string[]>([]);
+  const [selectedSalesGradeKeys, setSelectedSalesGradeKeys] = useState<string[]>(
+    []
+  );
+  const [selectedListingGradeKeys, setSelectedListingGradeKeys] = useState<
+    string[]
+  >([]);
 
   const filteredSales = useMemo(
     () => filterMarketSales(data.sales, sourceFilter, periodFilter),
     [data.sales, sourceFilter, periodFilter]
+  );
+
+  const salesGradeFilterOptions = useMemo(() => {
+    const keys = new Set(
+      filteredSales.map((sale) =>
+        listingGradeFilterKey(sale.grader, sale.grade)
+      )
+    );
+    return [...keys].sort((a, b) => a.localeCompare(b));
+  }, [filteredSales]);
+
+  useEffect(() => {
+    setSelectedSalesGradeKeys(salesGradeFilterOptions);
+  }, [salesGradeFilterOptions]);
+
+  const gradeFilteredSales = useMemo(
+    () => filterSalesByGradeKeys(filteredSales, selectedSalesGradeKeys),
+    [filteredSales, selectedSalesGradeKeys]
   );
 
   const listingsByType = useMemo(
@@ -115,7 +159,7 @@ export function MarketSalesSection({
     [ebayListings, listingTypeFilter]
   );
 
-  const gradeFilterOptions = useMemo(() => {
+  const listingGradeFilterOptions = useMemo(() => {
     const keys = new Set(
       listingsByType.map((listing) =>
         listingGradeFilterKey(listing.grader, listing.grade)
@@ -125,120 +169,227 @@ export function MarketSalesSection({
   }, [listingsByType]);
 
   useEffect(() => {
-    setSelectedGradeKeys(gradeFilterOptions);
-  }, [gradeFilterOptions]);
+    setSelectedListingGradeKeys(listingGradeFilterOptions);
+  }, [listingGradeFilterOptions]);
 
   const filteredListings = useMemo(() => {
-    if (selectedGradeKeys.length === 0) return [];
-    const selected = new Set(selectedGradeKeys);
+    if (selectedListingGradeKeys.length === 0) return [];
+    const selected = new Set(selectedListingGradeKeys);
     return listingsByType.filter((listing) =>
       selected.has(listingGradeFilterKey(listing.grader, listing.grade))
     );
-  }, [listingsByType, selectedGradeKeys]);
+  }, [listingsByType, selectedListingGradeKeys]);
 
   const summary = useMemo(
-    () => buildMarketSalesSummary(filteredSales),
-    [filteredSales]
+    () => buildMarketSalesSummary(gradeFilteredSales),
+    [gradeFilteredSales]
   );
 
   const lastSale = useMemo(() => {
-    if (filteredSales.length === 0) return null;
-    return [...filteredSales].sort((a, b) =>
+    if (gradeFilteredSales.length === 0) return null;
+    return [...gradeFilteredSales].sort((a, b) =>
       b.sale_date.localeCompare(a.sale_date)
     )[0];
-  }, [filteredSales]);
+  }, [gradeFilteredSales]);
 
   const estimatedValue = useMemo(
-    () => estimateMarketValue(filteredSales),
-    [filteredSales]
+    () => estimateMarketValue(gradeFilteredSales),
+    [gradeFilteredSales]
   );
 
-  const marketValue = useMemo(
-    () => estimateMarketValue(data.sales).value,
-    [data.sales]
+  const salesTrend = useMemo(
+    () => computeRecentSalesTrend(gradeFilteredSales),
+    [gradeFilteredSales]
   );
+
+  const listingAnalyses = useMemo(() => {
+    const analyses = new Map<string, ListingAnalysis>();
+    for (const listing of filteredListings) {
+      analyses.set(
+        listing.id,
+        analyzeListing(listing, filteredSales, predictions)
+      );
+    }
+    return analyses;
+  }, [filteredListings, filteredSales, predictions]);
+
+  const salesHistoryFilters = (
+    <>
+      <Select
+        value={sourceFilter}
+        onValueChange={(value) =>
+          setSourceFilter((value as SourceFilter) ?? "all")
+        }
+      >
+        <SelectTrigger size="sm" className="w-[160px]">
+          <SelectValue placeholder="Source" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All sources</SelectItem>
+          <SelectItem value="ebay">eBay</SelectItem>
+          <SelectItem value="fanatics_collect">Fanatics Collect</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select
+        value={periodFilter}
+        onValueChange={(value) =>
+          setPeriodFilter((value as PeriodFilter) ?? "90d")
+        }
+      >
+        <SelectTrigger size="sm" className="w-[140px]">
+          <SelectValue placeholder="Period" />
+        </SelectTrigger>
+        <SelectContent>
+          {MARKET_SALES_PERIOD_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <GradeFilterDropdown
+        options={salesGradeFilterOptions}
+        selected={selectedSalesGradeKeys}
+        onChange={setSelectedSalesGradeKeys}
+      />
+    </>
+  );
+
+  const listingsFilters = (
+    <>
+      <Select
+        value={listingTypeFilter}
+        onValueChange={(value) =>
+          setListingTypeFilter((value as ListingTypeFilter) ?? "all")
+        }
+      >
+        <SelectTrigger size="sm" className="w-[140px]">
+          <SelectValue placeholder="Listing type" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All types</SelectItem>
+          <SelectItem value="auction">Auction</SelectItem>
+          <SelectItem value="buy_it_now">Buy It Now</SelectItem>
+        </SelectContent>
+      </Select>
+      <GradeFilterDropdown
+        options={listingGradeFilterOptions}
+        selected={selectedListingGradeKeys}
+        onChange={setSelectedListingGradeKeys}
+      />
+    </>
+  );
+
+  const marketStatsGrid = (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <SummaryStat
+        label="Last sale"
+        value={lastSale ? formatCurrency(lastSale.sale_price) : "—"}
+        subtitle={lastSale?.sale_date}
+      />
+      <SummaryStat
+        label="Price range"
+        value={
+          summary.low_price != null && summary.high_price != null
+            ? `${formatCurrency(summary.low_price)} – ${formatCurrency(summary.high_price)}`
+            : "—"
+        }
+      />
+      <EstimatedValueStat estimate={estimatedValue} />
+      <SummaryStat
+        label="30-day change"
+        value={
+          salesTrend.change30d === 0
+            ? "Flat"
+            : formatPercent(Math.abs(salesTrend.change30d))
+        }
+        subtitle={`${salesTrend.volume30d} comps${
+          salesTrend.avgPrice30d != null
+            ? ` · avg ${formatCurrency(salesTrend.avgPrice30d)}`
+            : ""
+        }`}
+        positive={
+          salesTrend.change30d > 0
+            ? true
+            : salesTrend.change30d < 0
+              ? false
+              : undefined
+        }
+      />
+      <SummaryStat
+        label="90-day change"
+        value={
+          salesTrend.change90d === 0
+            ? "Flat"
+            : formatPercent(Math.abs(salesTrend.change90d))
+        }
+        subtitle={`${salesTrend.volume90d} comps${
+          salesTrend.avgPrice90d != null
+            ? ` · avg ${formatCurrency(salesTrend.avgPrice90d)}`
+            : ""
+        }`}
+        positive={
+          salesTrend.change90d > 0
+            ? true
+            : salesTrend.change90d < 0
+              ? false
+              : undefined
+        }
+      />
+    </div>
+  );
+
+  const aiInsightsTile = predictions ? (
+    <div className="rounded-xl border border-border/80 bg-muted/10 px-4 py-3">
+      <p className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <Sparkles className="h-3.5 w-3.5" />
+        AI Insights
+      </p>
+      <div className="space-y-2">
+        {predictions.commentary.map((paragraph, index) => (
+          <p key={index} className="text-sm leading-relaxed text-foreground/90">
+            {paragraph}
+          </p>
+        ))}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <CardTitle className="text-base font-medium flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            Market Sales
+            {predictions ? (
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            )}
+            {predictions ? "Market Outlook & Sales" : "Market Sales"}
           </CardTitle>
           <CardDescription>
-            Comparable sales and active eBay listings for this card
+            {predictions
+              ? "Recent comps, market forecast, and active listings for this card"
+              : "Comparable sales and active eBay listings for this card"}
           </CardDescription>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {activeTab === "sales-history" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {predictions ? (
             <>
-              <Select
-                value={sourceFilter}
-                onValueChange={(value) =>
-                  setSourceFilter((value as SourceFilter) ?? "all")
-                }
-              >
-                <SelectTrigger size="sm" className="w-[160px]">
-                  <SelectValue placeholder="Source" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All sources</SelectItem>
-                  <SelectItem value="ebay">eBay</SelectItem>
-                  <SelectItem value="fanatics_collect">
-                    Fanatics Collect
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={periodFilter}
-                onValueChange={(value) =>
-                  setPeriodFilter((value as PeriodFilter) ?? "90d")
-                }
-              >
-                <SelectTrigger size="sm" className="w-[140px]">
-                  <SelectValue placeholder="Period" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MARKET_SALES_PERIOD_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <OutlookBadge outlook={predictions.outlook} />
+              <Badge variant="outline" className="text-xs font-normal capitalize">
+                {predictions.confidence} confidence
+              </Badge>
             </>
-          ) : (
-            <>
-              <Select
-                value={listingTypeFilter}
-                onValueChange={(value) =>
-                  setListingTypeFilter((value as ListingTypeFilter) ?? "all")
-                }
-              >
-                <SelectTrigger size="sm" className="w-[140px]">
-                  <SelectValue placeholder="Listing type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  <SelectItem value="auction">Auction</SelectItem>
-                  <SelectItem value="buy_it_now">Buy It Now</SelectItem>
-                </SelectContent>
-              </Select>
-              <GradeFilterDropdown
-                options={gradeFilterOptions}
-                selected={selectedGradeKeys}
-                onChange={setSelectedGradeKeys}
-              />
-            </>
-          )}
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {preview && activeTab === "sales-history" && (
           <div className="rounded-lg border border-dashed border-border/80 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Sales History uses sample comp data — eBay sold listings will be
-            added in a later phase.
+            {predictions
+              ? "Sales history and market outlook use sample data for design preview."
+              : "Sales History uses sample comp data — eBay sold listings will be added in a later phase."}
           </div>
         )}
 
@@ -248,45 +399,32 @@ export function MarketSalesSection({
           </div>
         )}
 
+        {marketStatsGrid}
+        {aiInsightsTile}
+
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab((value as MarketTab) ?? "sales-history")}
         >
-          <TabsList>
-            <TabsTrigger value="sales-history">Sales History</TabsTrigger>
-            <TabsTrigger value="listings">
-              Listings ({ebayListings.length})
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <TabsList>
+              <TabsTrigger value="sales-history">Sales History</TabsTrigger>
+              <TabsTrigger value="listings">Listings</TabsTrigger>
+            </TabsList>
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === "sales-history" ? salesHistoryFilters : listingsFilters}
+            </div>
+          </div>
 
           <TabsContent value="sales-history" className="mt-4 space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <SummaryStat
-                label="Last sale"
-                value={
-                  lastSale ? formatCurrency(lastSale.sale_price) : "—"
-                }
-                subtitle={lastSale?.sale_date}
-              />
-              <SummaryStat
-                label="Price range"
-                value={
-                  summary.low_price != null && summary.high_price != null
-                    ? `${formatCurrency(summary.low_price)} – ${formatCurrency(summary.high_price)}`
-                    : "—"
-                }
-              />
-              <EstimatedValueStat estimate={estimatedValue} />
-            </div>
-
             <div className="rounded-xl border border-border/80 bg-muted/10 px-4 py-4">
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Sales over time
               </p>
-              <MarketSalesChart sales={filteredSales} />
+              <MarketSalesChart sales={gradeFilteredSales} />
             </div>
 
-            {filteredSales.length === 0 ? (
+            {gradeFilteredSales.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 No comparable sales match the selected filters.
               </p>
@@ -305,7 +443,7 @@ export function MarketSalesSection({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredSales.map((sale) => (
+                    {gradeFilteredSales.map((sale) => (
                       <MarketSaleRow key={sale.id} sale={sale} />
                     ))}
                   </TableBody>
@@ -390,9 +528,8 @@ export function MarketSalesSection({
                       <TableHead>Grade</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Price</TableHead>
-                      <TableHead className="text-right">Bids</TableHead>
-                      <TableHead className="text-right">Match</TableHead>
-                      <TableHead className="w-[1%]" />
+                      <TableHead className="text-right">vs Market</TableHead>
+                      <TableHead>Prediction</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -400,7 +537,10 @@ export function MarketSalesSection({
                       <MarketListingRow
                         key={listing.id}
                         listing={listing}
-                        recommended={isRecommendedBuy(listing, marketValue)}
+                        analysis={
+                          listingAnalyses.get(listing.id) ??
+                          analyzeListing(listing, filteredSales, predictions)
+                        }
                       />
                     ))}
                   </TableBody>
@@ -476,22 +616,28 @@ function MarketSaleRow({ sale }: { sale: MarketSale }) {
 
 function MarketListingRow({
   listing,
-  recommended = false,
+  analysis,
 }: {
   listing: MarketListing;
-  recommended?: boolean;
+  analysis: ListingAnalysis;
 }) {
+  const recommended = analysis.buySignal === "recommended";
+  const doNotBuy = analysis.buySignal === "do_not_buy";
+
   return (
     <TableRow
       className={cn(
         recommended &&
-          "bg-emerald-500/5 hover:bg-emerald-500/10 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15"
+          "bg-emerald-500/5 hover:bg-emerald-500/10 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15",
+        doNotBuy &&
+          "bg-destructive/5 hover:bg-destructive/10 dark:bg-destructive/10 dark:hover:bg-destructive/15"
       )}
     >
       <TableCell
         className={cn(
           "whitespace-nowrap text-sm tabular-nums",
-          recommended && "border-l-2 border-l-emerald-500/50"
+          recommended && "border-l-2 border-l-emerald-500/50",
+          doNotBuy && "border-l-2 border-l-destructive/50"
         )}
       >
         {formatListingEndsAt(listing.ends_at)}
@@ -523,6 +669,7 @@ function MarketListingRow({
         <div className="flex flex-wrap items-center gap-1.5">
           {MARKET_LISTING_TYPE_LABELS[listing.listing_type]}
           {recommended && <RecommendedBuyBadge />}
+          {doNotBuy && <DoNotBuyBadge />}
         </div>
       </TableCell>
       <TableCell className="text-right tabular-nums font-medium">
@@ -531,22 +678,11 @@ function MarketListingRow({
           {listing.listing_type === "auction" ? "Current bid" : "Buy now"}
         </div>
       </TableCell>
-      <TableCell className="text-right tabular-nums text-sm">
-        {listing.listing_type === "auction" ? listing.bid_count ?? 0 : "—"}
-      </TableCell>
-      <TableCell className="text-right">
-        <MatchBadge confidence={listing.match_confidence} />
+      <TableCell className="text-right text-sm">
+        <ListingComparisonCell analysis={analysis} />
       </TableCell>
       <TableCell>
-        <Link
-          href={listing.listing_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex text-muted-foreground transition-colors hover:text-primary"
-          aria-label={`View listing on ${MARKET_SALE_SOURCE_LABELS[listing.source]}`}
-        >
-          <ExternalLink className="h-4 w-4" />
-        </Link>
+        <ListingPredictionBadge prediction={analysis.prediction} />
       </TableCell>
     </TableRow>
   );
@@ -645,6 +781,95 @@ function RecommendedBuyBadge() {
   );
 }
 
+function DoNotBuyBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="text-xs font-normal border-destructive/40 text-destructive"
+    >
+      Do not buy
+    </Badge>
+  );
+}
+
+function ListingComparisonCell({ analysis }: { analysis: ListingAnalysis }) {
+  if (
+    analysis.vsEstimatedPct == null &&
+    analysis.vsLastSalePct == null &&
+    analysis.vsRecentMedianPct == null
+  ) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <div className="space-y-0.5 tabular-nums">
+      {analysis.vsEstimatedPct != null ? (
+        <ComparisonLine label="Est" value={analysis.vsEstimatedPct} />
+      ) : null}
+      {analysis.vsLastSalePct != null ? (
+        <ComparisonLine label="Last" value={analysis.vsLastSalePct} />
+      ) : null}
+      {analysis.vsRecentMedianPct != null ? (
+        <ComparisonLine label="90d med" value={analysis.vsRecentMedianPct} />
+      ) : null}
+    </div>
+  );
+}
+
+function ComparisonLine({ label, value }: { label: string; value: number }) {
+  const positive = value < 0;
+  const negative = value > 0;
+
+  return (
+    <div
+      className={cn(
+        "text-xs",
+        positive && "text-emerald-600 dark:text-emerald-400",
+        negative && "text-destructive",
+        !positive && !negative && "text-muted-foreground"
+      )}
+    >
+      <span className="text-muted-foreground">{label} </span>
+      {value > 0 ? "+" : ""}
+      {formatPercent(Math.abs(value))}
+    </div>
+  );
+}
+
+function ListingPredictionBadge({
+  prediction,
+}: {
+  prediction: ListingValuePrediction;
+}) {
+  const config = {
+    up: {
+      label: LISTING_PREDICTION_LABELS.up,
+      className:
+        "border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5",
+      icon: TrendingUp,
+    },
+    down: {
+      label: LISTING_PREDICTION_LABELS.down,
+      className: "border-destructive/40 text-destructive bg-destructive/5",
+      icon: TrendingDown,
+    },
+    flat: {
+      label: LISTING_PREDICTION_LABELS.flat,
+      className: "border-border text-muted-foreground bg-muted/30",
+      icon: Minus,
+    },
+  }[prediction];
+
+  const Icon = config.icon;
+
+  return (
+    <Badge variant="outline" className={cn("gap-1 text-xs font-normal", config.className)}>
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </Badge>
+  );
+}
+
 function MatchBadge({
   confidence,
 }: {
@@ -667,6 +892,36 @@ function MatchBadge({
       )}
     >
       {label}
+    </Badge>
+  );
+}
+
+function OutlookBadge({ outlook }: { outlook: MarketOutlook }) {
+  const config = {
+    bullish: {
+      label: "Bullish",
+      className:
+        "border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5",
+      icon: TrendingUp,
+    },
+    bearish: {
+      label: "Bearish",
+      className: "border-destructive/40 text-destructive bg-destructive/5",
+      icon: TrendingDown,
+    },
+    neutral: {
+      label: "Neutral",
+      className: "border-border text-muted-foreground bg-muted/30",
+      icon: LineChart,
+    },
+  }[outlook];
+
+  const Icon = config.icon;
+
+  return (
+    <Badge variant="outline" className={cn("gap-1 text-xs font-normal", config.className)}>
+      <Icon className="h-3.5 w-3.5" />
+      {config.label}
     </Badge>
   );
 }

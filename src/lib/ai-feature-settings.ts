@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
@@ -17,7 +18,7 @@ function mapRow(row: {
   };
 }
 
-export async function getAiFeatureSettings(): Promise<AiFeatureSettings> {
+export const getAiFeatureSettings = cache(async (): Promise<AiFeatureSettings> => {
   const user = await getCurrentUser();
   if (!user) {
     return DEFAULT_AI_FEATURE_SETTINGS;
@@ -35,7 +36,7 @@ export async function getAiFeatureSettings(): Promise<AiFeatureSettings> {
   }
 
   return mapRow(data);
-}
+});
 
 export async function getAdminUserFeatureSettingsMap(): Promise<UserFeatureSettingsMap> {
   const profile = await getUserProfile();

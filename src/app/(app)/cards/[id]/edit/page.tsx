@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { CardForm } from "@/components/card-form";
 import { getAsset, getLotsForAsset } from "@/lib/data";
+import { getDm2CardFormLookups } from "@/lib/data-model-v2-data";
 import { isAssetHeld } from "@/types/card";
 
 export default async function EditCardPage({
@@ -9,9 +10,10 @@ export default async function EditCardPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [asset, lots] = await Promise.all([
+  const [asset, lots, dm2Lookups] = await Promise.all([
     getAsset(id),
     getLotsForAsset(id),
+    getDm2CardFormLookups(),
   ]);
   if (!asset) notFound();
   if (!isAssetHeld(lots)) {
@@ -30,7 +32,7 @@ export default async function EditCardPage({
         </p>
       </div>
 
-      <CardForm mode="edit" card={asset} lots={lots} />
+      <CardForm mode="edit" card={asset} lots={lots} dm2Lookups={dm2Lookups} />
     </div>
   );
 }

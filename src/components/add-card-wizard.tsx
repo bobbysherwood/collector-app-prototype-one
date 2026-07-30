@@ -3,24 +3,22 @@
 import { useState } from "react";
 import { AddCardSearchStep } from "@/components/add-card-search-step";
 import { CardForm } from "@/components/card-form";
-import { repositoryCardToFormPrefill } from "@/lib/card-repository-to-asset";
+import { dm2CardToFormPrefill, formatDm2CardLabel } from "@/lib/dm2-card-to-asset";
 import type { CardFormData } from "@/types/card";
-import type { CardRepositorySearchResult } from "@/types/card-repository";
+import type { Dm2CardFormLookups, Dm2CardSearchResult } from "@/types/data-model-v2";
 
 type WizardStep = "search" | "form";
 
-export function AddCardWizard() {
+export function AddCardWizard({ dm2Lookups }: { dm2Lookups: Dm2CardFormLookups }) {
   const [step, setStep] = useState<WizardStep>("search");
   const [initialForm, setInitialForm] = useState<Partial<CardFormData> | undefined>(
     undefined
   );
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
 
-  function handleSelectCard(card: CardRepositorySearchResult) {
-    setInitialForm(repositoryCardToFormPrefill(card));
-    setSelectedLabel(
-      [card.year, card.brand, card.cardSet, card.player].filter(Boolean).join(" ")
-    );
+  function handleSelectCard(card: Dm2CardSearchResult) {
+    setInitialForm(dm2CardToFormPrefill(card));
+    setSelectedLabel(formatDm2CardLabel(card));
     setStep("form");
   }
 
@@ -40,7 +38,7 @@ export function AddCardWizard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Add Card</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Search the card repository or add manually
+            Search the card catalog or add manually
           </p>
         </div>
 
@@ -67,6 +65,7 @@ export function AddCardWizard() {
         mode="create"
         initialForm={initialForm}
         onBackToSearch={handleBackToSearch}
+        dm2Lookups={dm2Lookups}
       />
     </div>
   );

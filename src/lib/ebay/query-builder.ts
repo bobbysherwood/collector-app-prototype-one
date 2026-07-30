@@ -15,6 +15,7 @@ export function buildEbayListingSearchQuery(asset: Asset): EbayListingSearchQuer
   const terms = [
     String(asset.year),
     asset.card_type.trim(),
+    asset.card_set_name?.trim(),
     asset.player_name.trim(),
   ];
 

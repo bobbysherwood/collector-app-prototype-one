@@ -15,6 +15,7 @@ interface CollectionViewProps {
   soldPositions: AssetPosition[];
   latestValuations: Record<string, CardValuation>;
   sales: CardSale[];
+  attributeNamesByAssetId?: Record<string, string[]>;
 }
 
 export function CollectionView({
@@ -22,6 +23,7 @@ export function CollectionView({
   soldPositions,
   latestValuations,
   sales,
+  attributeNamesByAssetId = {},
 }: CollectionViewProps) {
   const [search, setSearch] = useState("");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -150,6 +152,7 @@ export function CollectionView({
         latestValuations={latestValuations}
         salesByAsset={salesByAsset}
         showSold={showSold}
+        attributeNamesByAssetId={attributeNamesByAssetId}
       />
     </div>
   );

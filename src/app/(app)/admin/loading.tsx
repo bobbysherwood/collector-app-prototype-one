@@ -9,7 +9,7 @@ export default function AdminLoading() {
         <aside className="w-56 shrink-0 border-r border-border bg-muted/20 p-4">
           <div className="mb-3 h-3 w-12 animate-pulse rounded bg-muted" />
           <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, index) => (
+            {Array.from({ length: 6 }).map((_, index) => (
               <div
                 key={index}
                 className="h-9 animate-pulse rounded-lg bg-muted"

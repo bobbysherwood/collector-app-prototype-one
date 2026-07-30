@@ -2,13 +2,17 @@ import { createClient } from "@/lib/supabase/server";
 import type {
   Dm2Brand,
   Dm2Card,
+  Dm2CardFormLookups,
   Dm2CardSet,
   Dm2CardSetCategory,
   Dm2CardSetName,
   Dm2EntityDescription,
+  Dm2Attribute,
   Dm2Manufacturer,
   Dm2Parallel,
+  Dm2CardAttributeAssignment,
 } from "@/types/data-model-v2";
+import { EMPTY_DM2_CARD_FORM_LOOKUPS } from "@/types/data-model-v2";
 
 export async function getDm2EntityDescriptions(): Promise<Dm2EntityDescription[]> {
   const supabase = await createClient();
@@ -36,7 +40,7 @@ function mapNameLookupRow(row: {
   name: string;
   active: boolean;
   created_at: string;
-}): Dm2CardSetCategory | Dm2CardSetName | Dm2Manufacturer | Dm2Parallel {
+}): Dm2CardSetCategory | Dm2CardSetName | Dm2Manufacturer | Dm2Parallel | Dm2Attribute {
   return {
     id: row.id,
     name: row.name,
@@ -149,6 +153,56 @@ export async function getDm2Parallels(): Promise<Dm2Parallel[]> {
   return (data ?? []).map(mapNameLookupRow);
 }
 
+export async function getDm2Attributes(): Promise<Dm2Attribute[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("dm2_attributes")
+    .select("id, name, active, created_at")
+    .order("name", { ascending: true });
+
+  if (error) {
+    console.error("Failed to load attributes:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map(mapNameLookupRow);
+}
+
+function mapCardAttributeRows(value: unknown): Dm2CardAttributeAssignment[] {
+  if (!Array.isArray(value)) return [];
+
+  const assignments = value
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const record = row as {
+        id?: string;
+        attribute_id?: string;
+        dm2_attributes?: unknown;
+      };
+      const attribute = Array.isArray(record.dm2_attributes)
+        ? record.dm2_attributes[0]
+        : record.dm2_attributes;
+      const attributeName =
+        attribute &&
+        typeof attribute === "object" &&
+        "name" in attribute &&
+        typeof attribute.name === "string"
+          ? attribute.name
+          : "";
+      if (!record.id || !record.attribute_id || !attributeName) return null;
+      return {
+        id: record.id,
+        attributeId: record.attribute_id,
+        attributeName,
+      };
+    })
+    .filter((row): row is Dm2CardAttributeAssignment => row != null);
+
+  return assignments.sort((left, right) =>
+    left.attributeName.localeCompare(right.attributeName)
+  );
+}
+
 function readPickListLabel(value: unknown): string {
   if (Array.isArray(value)) {
     const first = value[0];
@@ -252,10 +306,12 @@ function mapCardRow(row: {
   card_number: string;
   player: string;
   parallel_id: string | null;
+  image_path?: string | null;
   active: boolean;
   created_at: string;
   dm2_card_sets: unknown;
   dm2_parallels: unknown;
+  dm2_card_attributes?: unknown;
 }): Dm2Card {
   const cardSetData = Array.isArray(row.dm2_card_sets)
     ? row.dm2_card_sets[0]
@@ -291,6 +347,8 @@ function mapCardRow(row: {
     player: row.player,
     parallelId: row.parallel_id,
     parallelName,
+    imagePath: row.image_path ?? null,
+    attributes: mapCardAttributeRows(row.dm2_card_attributes),
     active: row.active,
     createdAt: row.created_at,
   };
@@ -349,7 +407,7 @@ export async function getDm2CardCountsBySetId(): Promise<Record<string, number>>
 export async function getDm2CardsBySetId(cardSetId: string): Promise<Dm2Card[]> {
   const supabase = await createClient();
   const cardSelect =
-    "id, card_set_id, card_number, player, parallel_id, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name)";
+    "id, card_set_id, card_number, player, parallel_id, image_path, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name), dm2_card_attributes(id, attribute_id, dm2_attributes(name))";
 
   const data = await fetchAllSupabasePages<Parameters<typeof mapCardRow>[0]>(
     `dm2 cards for set ${cardSetId}`,
@@ -368,7 +426,7 @@ export async function getDm2CardsBySetId(cardSetId: string): Promise<Dm2Card[]> 
 export async function getDm2Cards(): Promise<Dm2Card[]> {
   const supabase = await createClient();
   const cardSelect =
-    "id, card_set_id, card_number, player, parallel_id, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name)";
+    "id, card_set_id, card_number, player, parallel_id, image_path, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name), dm2_card_attributes(id, attribute_id, dm2_attributes(name))";
 
   const data = await fetchAllSupabasePages<Parameters<typeof mapCardRow>[0]>(
     "dm2 cards",
@@ -381,4 +439,40 @@ export async function getDm2Cards(): Promise<Dm2Card[]> {
   );
 
   return data.map(mapCardRow);
+}
+
+type Dm2CardFormLookupsRpc = {
+  manufacturers?: Array<{ id: string; name: string }>;
+  brands?: Array<{ id: string; name: string; manufacturer_id: string }>;
+  card_set_categories?: Array<{ id: string; name: string }>;
+  card_set_names?: Array<{ id: string; name: string }>;
+  parallels?: Array<{ id: string; name: string }>;
+};
+
+export async function getDm2CardFormLookups(): Promise<Dm2CardFormLookups> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_dm2_card_form_lookups");
+
+  if (error) {
+    console.error("Failed to load DM2 card form lookups:", error.message);
+    return EMPTY_DM2_CARD_FORM_LOOKUPS;
+  }
+
+  if (!data || typeof data !== "object") {
+    return EMPTY_DM2_CARD_FORM_LOOKUPS;
+  }
+
+  const payload = data as Dm2CardFormLookupsRpc;
+
+  return {
+    manufacturers: payload.manufacturers ?? [],
+    brands: (payload.brands ?? []).map((brand) => ({
+      id: brand.id,
+      name: brand.name,
+      manufacturerId: brand.manufacturer_id,
+    })),
+    cardSetCategories: payload.card_set_categories ?? [],
+    cardSetNames: payload.card_set_names ?? [],
+    parallels: payload.parallels ?? [],
+  };
 }

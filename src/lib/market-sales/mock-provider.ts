@@ -24,20 +24,42 @@ function daysAgo(days: number): string {
   return date.toISOString().split("T")[0];
 }
 
-function pickGradeFromLots(lots: Lot[], index: number): {
+function pickGradeFromLots(
+  lots: Lot[],
+  index: number,
+  seed: number
+): {
   grader: Lot["grader"];
   grade: string | null;
   confidence: MarketSaleMatchConfidence;
 } {
   const heldLots = lots.filter((lot) => lot.quantity_remaining > 0);
   const pool = heldLots.length > 0 ? heldLots : lots;
-  if (pool.length === 0) {
-    return { grader: "PSA", grade: "10", confidence: "medium" };
+  if (pool.length > 0) {
+    const lot = pool[index % pool.length];
+    return {
+      grader: lot.grader,
+      grade: lot.grade,
+      confidence: index % 3 === 0 ? "high" : index % 3 === 1 ? "medium" : "low",
+    };
   }
-  const lot = pool[index % pool.length];
+
+  const mockGrades: { grader: Lot["grader"]; grade: string | null }[] = [
+    { grader: "PSA", grade: "10" },
+    { grader: "PSA", grade: "9" },
+    { grader: "PSA", grade: "8" },
+    { grader: "BGS", grade: "9.5" },
+    { grader: "BGS", grade: "10" },
+    { grader: "SGC", grade: "10" },
+    { grader: "SGC", grade: "9" },
+    { grader: "CGC", grade: "9.5" },
+    { grader: "Raw", grade: null },
+  ];
+
+  const grade = mockGrades[(seed + index) % mockGrades.length];
   return {
-    grader: lot.grader,
-    grade: lot.grade,
+    grader: grade.grader,
+    grade: grade.grade,
     confidence: index % 3 === 0 ? "high" : index % 3 === 1 ? "medium" : "low",
   };
 }
@@ -82,7 +104,7 @@ export function getMockMarketSales(
   ];
 
   const sales: MarketSale[] = templates.map((template, index) => {
-    const gradeInfo = pickGradeFromLots(lots, index);
+    const gradeInfo = pickGradeFromLots(lots, index, seed);
     const hammer = Math.round(basePrice * template.priceFactor * 100) / 100;
     const premium = template.premium ?? 0;
     const salePrice =

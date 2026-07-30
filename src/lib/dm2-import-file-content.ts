@@ -1,13 +1,35 @@
 import * as XLSX from "xlsx";
 import {
+  applyBasePrefixedCatalogSplits,
+  buildExtendedParallelCandidates,
+  correctCardSetValueSplit,
+  filterCardSetNameExclusiveParallelCandidates,
+  mergeFragmentedParallelSplit,
+  reconcileCardSetNameExclusiveParallelSplit,
+  reconcileOverlappingSetNameParallelWords,
+  resolveBestParallelSuffix,
+} from "@/lib/dm2-import-parallel-reconcile";
+import {
+  applyP0CardSetSplitCorrections,
+  buildBasePrefixedSplitIndex,
   buildCardSetSplitIndex,
+  buildSiblingParallelFamilySplitIndex,
+  buildSpectraCrossYearSplitIndex,
+  buildSpectraProductLineBaseSplitIndex,
+  countCardSetPrefixFamilyMembers,
   findCardSetRoots,
+  findSharedCardSetNameFromValues,
   inferCardSetCategory,
   normalizeBrandProgramName,
   normalizeCardSetRootName,
+  reconcileParallelModifierStemInSetName,
+  reconcileInsertParallelTierInSetName,
+  resolveBaseCardSetDisplayName,
+  resolveFinalCardSetCategory,
+  usesSpectraCardSetRules,
   resolveManufacturerFromBrand,
+  suffixAfterWordPrefix,
 } from "@/lib/dm2-import-spreadsheet-split";
-import { applyBasePrefixedCatalogSplits } from "@/lib/dm2-import-parallel-reconcile";
 import type {
   Dm2ColumnMapping,
   Dm2ExtractedRow,
@@ -485,6 +507,8 @@ export function extractRowsFromSpreadsheet(input: {
     });
   }
 
+  const dedupedRows = dedupeExactExtractedRows(extracted);
+
   const sessionContext: Dm2ImportSessionContext = {
     ...defaultMetadata,
     manufacturer:
@@ -498,7 +522,38 @@ export function extractRowsFromSpreadsheet(input: {
       : undefined,
   };
 
-  return { rows: extracted, sessionContext };
+  return { rows: dedupedRows, sessionContext };
+}
+
+function extractedRowDedupeKey(row: Omit<Dm2ExtractedRow, "id">): string {
+  return [
+    row.sourceFileName,
+    row.sport ?? "",
+    row.year ?? "",
+    row.manufacturer ?? "",
+    row.brand ?? "",
+    row.cardSetCategory ?? "",
+    row.cardSetName ?? "",
+    row.cardNumber ?? "",
+    row.player ?? "",
+    row.parallel ?? "",
+  ].join("\0");
+}
+
+function dedupeExactExtractedRows(
+  rows: Array<Omit<Dm2ExtractedRow, "id">>
+): Array<Omit<Dm2ExtractedRow, "id">> {
+  const seen = new Set<string>();
+  const deduped: Array<Omit<Dm2ExtractedRow, "id">> = [];
+
+  for (const row of rows) {
+    const key = extractedRowDedupeKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+
+  return deduped;
 }
 
 export type Dm2CardSetValueSplit = {
@@ -567,6 +622,15 @@ function collectSharedInsertPrefixCandidates(
     );
     if (members.length < 2) continue;
 
+    const sharedSetName = findSharedCardSetNameFromValues(members);
+    if (sharedSetName) {
+      candidates.set(
+        sharedSetName.toLowerCase(),
+        sharedSetName.split(/\s+/).filter(Boolean).length
+      );
+      continue;
+    }
+
     for (let i = 0; i < members.length; i++) {
       for (let j = i + 1; j < members.length; j++) {
         const prefix = longestSharedWordPrefix(members[i], members[j]);
@@ -587,7 +651,8 @@ function applySharedInsertPrefixSplits(
   enriched: Record<string, Dm2CardSetValueSplit>,
   distinctValues: string[],
   catalogCardSetNames: string[],
-  catalogInsertSetNames: string[]
+  catalogInsertSetNames: string[],
+  parallelCandidates: string[]
 ): void {
   const insertNameKeys = new Set(
     catalogInsertSetNames.map((name) => name.trim().toLowerCase()).filter(Boolean)
@@ -608,21 +673,31 @@ function applySharedInsertPrefixSplits(
 
     for (const rawValue of members) {
       const split = enriched[rawValue];
-      if (!split || split.parallel) continue;
+      if (!split) continue;
 
       const insertName = canonicalPrefixFromValue(rawValue, wordCount);
-      const remainder = rawValue.slice(insertName.length).trim();
+      const remainder =
+        suffixAfterWordPrefix(rawValue, insertName) || split.parallel;
       const defaultCategory =
         split.cardSetCategory ??
         (isCatalogInsert || insertNameKeys.has(insertName.trim().toLowerCase())
           ? "Insert"
           : null);
 
+      const nextSplit = mergeFragmentedParallelSplit(
+        {
+          cardSetName: insertName,
+          parallel: remainder || split.parallel,
+          cardSetCategory: defaultCategory,
+        },
+        parallelCandidates
+      );
+
       enriched[rawValue] = {
         ...split,
-        cardSetName: insertName,
-        parallel: remainder || null,
-        cardSetCategory: defaultCategory,
+        cardSetName: nextSplit.cardSetName,
+        parallel: nextSplit.parallel,
+        cardSetCategory: nextSplit.cardSetCategory ?? defaultCategory,
       };
     }
   }
@@ -695,62 +770,61 @@ function parallelTokenAppearsInCatalogSetNames(
 function applyCatalogInformedParallelSplits(
   enriched: Record<string, Dm2CardSetValueSplit>,
   distinctValues: string[],
-  catalogParallels: string[],
+  parallelCandidates: string[],
   catalogCardSetNames: string[]
 ): void {
   const catalogSetKeys = catalogSetNameKeySet(catalogCardSetNames);
-  const sortedParallels = [...catalogParallels]
-    .map((name) => name.trim())
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
 
   for (const rawValue of distinctValues) {
     const trimmed = rawValue.trim();
     if (!trimmed) continue;
 
     const split = enriched[rawValue];
-    if (!split || split.parallel) continue;
+    if (!split) continue;
+
+    const corrected = correctCardSetValueSplit(
+      split,
+      trimmed,
+      parallelCandidates,
+      distinctValues
+    );
+    if (corrected.parallel) {
+      enriched[rawValue] = corrected;
+      continue;
+    }
 
     if (catalogSetKeys.has(trimmed.toLowerCase())) continue;
 
-    for (const parallel of sortedParallels) {
-      const parallelLower = parallel.toLowerCase();
-      const rawLower = trimmed.toLowerCase();
-      if (!rawLower.endsWith(parallelLower)) continue;
-      if (rawLower.length <= parallelLower.length) continue;
+    const parallel = resolveBestParallelSuffix(trimmed, parallelCandidates);
+    if (!parallel) continue;
 
-      const boundaryIndex = trimmed.length - parallel.length;
-      if (boundaryIndex > 0 && trimmed[boundaryIndex - 1] !== " ") continue;
+    const prefix = trimmed.slice(0, trimmed.length - parallel.length).trim();
+    if (!prefix) continue;
 
-      const prefix = trimmed.slice(0, boundaryIndex).trim();
-      if (!prefix) continue;
+    const parallelInSetNames = parallelTokenAppearsInCatalogSetNames(
+      catalogCardSetNames,
+      parallel
+    );
+    const resolvedSetName = resolveCatalogCardSetNameForPrefix(
+      prefix,
+      catalogCardSetNames
+    );
 
-      const parallelInSetNames = parallelTokenAppearsInCatalogSetNames(
-        catalogCardSetNames,
-        parallel
-      );
-      const resolvedSetName = resolveCatalogCardSetNameForPrefix(
-        prefix,
-        catalogCardSetNames
-      );
-
-      if (parallelInSetNames) {
-        if (!resolvedSetName) continue;
-        if (catalogSetKeys.has(`${resolvedSetName} ${parallel}`.toLowerCase())) {
-          continue;
-        }
-      } else if (!resolvedSetName) {
+    if (parallelInSetNames) {
+      if (!resolvedSetName) continue;
+      if (catalogSetKeys.has(`${resolvedSetName} ${parallel}`.toLowerCase())) {
         continue;
       }
-
-      enriched[rawValue] = {
-        ...split,
-        cardSetName: resolvedSetName!,
-        parallel,
-        cardSetCategory: inferCardSetCategory(resolvedSetName!, trimmed),
-      };
-      break;
+    } else if (!resolvedSetName) {
+      continue;
     }
+
+    enriched[rawValue] = {
+      ...split,
+      cardSetName: resolvedSetName!,
+      parallel,
+      cardSetCategory: inferCardSetCategory(resolvedSetName!, trimmed),
+    };
   }
 }
 
@@ -776,88 +850,122 @@ export function enrichCardSetValueSplits(input: {
     }
   }
 
-  const parallelNames = new Set(
-    input.catalogParallels.map((name) => name.trim()).filter(Boolean)
+  const extendedParallelCandidates = filterCardSetNameExclusiveParallelCandidates(
+    buildExtendedParallelCandidates(input.catalogParallels, input.distinctValues)
   );
-
-  for (const split of Object.values(enriched)) {
-    if (split.parallel) parallelNames.add(split.parallel);
-  }
-
-  const sortedParallels = [...parallelNames].sort((a, b) => b.length - a.length);
 
   for (const rawValue of input.distinctValues) {
     const split = enriched[rawValue];
-    if (!split?.cardSetName || split.parallel) continue;
+    if (!split) continue;
+    enriched[rawValue] = correctCardSetValueSplit(
+      split,
+      rawValue.trim(),
+      extendedParallelCandidates,
+      input.distinctValues
+    );
+  }
+
+  const sortedParallels = extendedParallelCandidates;
+
+  for (const rawValue of input.distinctValues) {
+    const split = enriched[rawValue];
+    if (!split?.cardSetName) continue;
 
     const normalizedRaw = rawValue.trim();
     if (!normalizedRaw) continue;
 
-    for (const parallel of sortedParallels) {
-      const rawLower = normalizedRaw.toLowerCase();
-      const parallelLower = parallel.toLowerCase();
-      if (!rawLower.endsWith(parallelLower)) continue;
+    const bestParallel = resolveBestParallelSuffix(
+      normalizedRaw,
+      sortedParallels
+    );
+    if (!bestParallel) continue;
 
-      const prefix = normalizedRaw
-        .slice(0, normalizedRaw.length - parallel.length)
+    const prefix = normalizedRaw
+      .slice(0, normalizedRaw.length - bestParallel.length)
+      .trim();
+    if (!prefix) continue;
+
+    if (
+      prefix.split(/\s+/).filter(Boolean).length === 1 &&
+      countCardSetPrefixFamilyMembers(prefix, input.distinctValues) < 2
+    ) {
+      continue;
+    }
+
+    const nameLower = split.cardSetName.toLowerCase();
+    const parallelLower = bestParallel.toLowerCase();
+    let nextName: string | null = null;
+
+    if (nameLower.endsWith(parallelLower)) {
+      nextName = split.cardSetName
+        .slice(0, split.cardSetName.length - bestParallel.length)
         .trim();
-      if (!prefix) continue;
-
-      const nameLower = split.cardSetName.toLowerCase();
-      let nextName: string | null = null;
-
-      if (nameLower.endsWith(parallelLower)) {
-        nextName = split.cardSetName
-          .slice(0, split.cardSetName.length - parallel.length)
-          .trim();
-        if (!nextName) {
-          nextName =
-            resolveCatalogCardSetNameForPrefix(
-              prefix,
-              input.catalogCardSetNames ?? []
-            ) ?? normalizeCardSetRootName(prefix);
-        }
-      } else if (nameLower === prefix.toLowerCase()) {
-        nextName = split.cardSetName;
-      } else if (
-        nameLower === rawLower ||
-        split.cardSetName.trim() === normalizedRaw
-      ) {
+      if (!nextName) {
         nextName =
           resolveCatalogCardSetNameForPrefix(
             prefix,
             input.catalogCardSetNames ?? []
           ) ?? normalizeCardSetRootName(prefix);
-      } else {
-        continue;
       }
-
-      if (!nextName) continue;
-
-      if (
-        catalogSetNameKeySet(input.catalogCardSetNames ?? []).has(
-          normalizedRaw.toLowerCase()
-        )
-      ) {
-        continue;
+    } else if (nameLower === prefix.toLowerCase()) {
+      nextName = split.cardSetName;
+    } else if (
+      nameLower === normalizedRaw.toLowerCase() ||
+      split.cardSetName.trim() === normalizedRaw
+    ) {
+      nextName =
+        resolveCatalogCardSetNameForPrefix(
+          prefix,
+          input.catalogCardSetNames ?? []
+        ) ?? normalizeCardSetRootName(prefix);
+    } else if (split.parallel) {
+      const merged = mergeFragmentedParallelSplit(
+        split,
+        sortedParallels
+      );
+      if (merged.parallel !== split.parallel) {
+        enriched[rawValue] = merged;
       }
-
-      enriched[rawValue] = {
-        ...split,
-        cardSetName: nextName,
-        parallel,
-        cardSetCategory:
-          split.cardSetCategory ??
-          inferCardSetCategory(nextName, normalizedRaw),
-      };
-      break;
+      continue;
+    } else {
+      continue;
     }
+
+    if (!nextName) continue;
+
+    if (
+      catalogSetNameKeySet(input.catalogCardSetNames ?? []).has(
+        normalizedRaw.toLowerCase()
+      )
+    ) {
+      continue;
+    }
+
+    enriched[rawValue] = {
+      ...split,
+      cardSetName: nextName,
+      parallel: bestParallel,
+      cardSetCategory:
+        split.cardSetCategory ??
+        inferCardSetCategory(nextName, normalizedRaw),
+    };
+  }
+
+  for (const rawValue of input.distinctValues) {
+    const split = enriched[rawValue];
+    if (!split) continue;
+    enriched[rawValue] = correctCardSetValueSplit(
+      split,
+      rawValue.trim(),
+      extendedParallelCandidates,
+      input.distinctValues
+    );
   }
 
   applyCatalogInformedParallelSplits(
     enriched,
     input.distinctValues,
-    input.catalogParallels,
+    extendedParallelCandidates,
     input.catalogCardSetNames ?? []
   );
 
@@ -865,7 +973,8 @@ export function enrichCardSetValueSplits(input: {
     enriched,
     input.distinctValues,
     input.catalogCardSetNames ?? [],
-    input.catalogInsertSetNames ?? []
+    input.catalogInsertSetNames ?? [],
+    extendedParallelCandidates
   );
 
   applyBasePrefixedCatalogSplits(
@@ -874,6 +983,79 @@ export function enrichCardSetValueSplits(input: {
     input.catalogParallels,
     input.catalogCardSetNames ?? []
   );
+
+  for (const rawValue of input.distinctValues) {
+    const split = enriched[rawValue];
+    if (!split) continue;
+    enriched[rawValue] = reconcileOverlappingSetNameParallelWords(
+      reconcileCardSetNameExclusiveParallelSplit(
+        correctCardSetValueSplit(
+          split,
+          rawValue.trim(),
+          extendedParallelCandidates,
+          input.distinctValues
+        )
+      )
+    );
+  }
+
+  for (const rawValue of input.distinctValues) {
+    const split = enriched[rawValue];
+    if (!split) continue;
+    enriched[rawValue] = reconcileOverlappingSetNameParallelWords(
+      reconcileCardSetNameExclusiveParallelSplit(split)
+    );
+  }
+
+  const p0SplitCaches = {
+    siblingIndex: buildSiblingParallelFamilySplitIndex(input.distinctValues),
+    baseIndex: buildBasePrefixedSplitIndex(input.distinctValues),
+    spectraIndex: buildSpectraCrossYearSplitIndex(input.distinctValues),
+    spectraProductLineBaseIndex: buildSpectraProductLineBaseSplitIndex(
+      input.distinctValues
+    ),
+    baseSetDisplayName: resolveBaseCardSetDisplayName(input.distinctValues),
+    usesSpectraCardSetRules: usesSpectraCardSetRules(input.distinctValues),
+  };
+
+  for (const rawValue of input.distinctValues) {
+    const split = enriched[rawValue];
+    if (!split) continue;
+    enriched[rawValue] = applyP0CardSetSplitCorrections(
+      split,
+      rawValue.trim(),
+      input.distinctValues,
+      p0SplitCaches
+    );
+  }
+
+  const usesSpectraRules = usesSpectraCardSetRules(input.distinctValues);
+
+  for (const rawValue of input.distinctValues) {
+    const split = enriched[rawValue];
+    if (!split) continue;
+    const reconciled = reconcileOverlappingSetNameParallelWords(
+      reconcileCardSetNameExclusiveParallelSplit(split)
+    );
+    const modifierAdjusted = reconcileParallelModifierStemInSetName(
+      reconciled,
+      input.distinctValues
+    );
+    const tierAdjusted = reconcileInsertParallelTierInSetName(
+      modifierAdjusted,
+      rawValue.trim(),
+      input.distinctValues
+    );
+    enriched[rawValue] = {
+      ...tierAdjusted,
+      cardSetCategory: resolveFinalCardSetCategory(
+        tierAdjusted.cardSetName,
+        rawValue.trim(),
+        tierAdjusted.cardSetCategory,
+        { usesSpectraCardSetRules: usesSpectraRules }
+      ),
+    };
+  }
 
   return enriched;
 }

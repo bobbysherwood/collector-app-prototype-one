@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useMemo } from "react";
 import { ArrowLeft, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +41,10 @@ import {
   totalSoldQuantity,
 } from "@/types/card";
 import { getMockMarketSales } from "@/lib/market-sales/mock-provider";
+import { getMockMarketPredictionsForAsset } from "@/lib/market-sales/mock-predictions-provider";
+import { enrichAssetForMarketSearch } from "@/lib/market-sales/asset-context";
 import { MarketSalesSection } from "@/components/market-sales-section";
+import { Dm2CardAttributeBadges } from "@/components/dm2-card-attribute-badges";
 import { groupValuationsByLot } from "@/lib/valuations";
 import { getImageUrl } from "@/lib/images";
 
@@ -53,6 +57,7 @@ interface CardDetailProps {
   listingsAsOf: string | null;
   listingsError?: string;
   ebaySandboxMode?: boolean;
+  attributeNames?: string[];
 }
 
 export function CardDetail({
@@ -64,6 +69,7 @@ export function CardDetail({
   listingsAsOf,
   listingsError,
   ebaySandboxMode,
+  attributeNames = [],
 }: CardDetailProps) {
   const valuationsByLot = groupValuationsByLot(valuations);
   const imageUrl = getImageUrl(asset.image_path);
@@ -79,7 +85,15 @@ export function CardDetail({
   const sortedSales = [...sales].sort((a, b) =>
     a.sale_date.localeCompare(b.sale_date)
   );
-  const marketSales = getMockMarketSales(asset, lots);
+  const marketAsset = useMemo(() => enrichAssetForMarketSearch(asset), [asset]);
+  const marketSales = useMemo(
+    () => getMockMarketSales(marketAsset, lots),
+    [marketAsset, lots]
+  );
+  const marketPredictions = useMemo(
+    () => getMockMarketPredictionsForAsset(marketAsset, marketSales.sales),
+    [marketAsset, marketSales.sales]
+  );
   const heldGrades = [
     ...new Set(
       lots
@@ -182,6 +196,8 @@ export function CardDetail({
             )}
           </div>
 
+          <Dm2CardAttributeBadges names={attributeNames} />
+
           <Separator />
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -246,9 +262,10 @@ export function CardDetail({
       )}
 
       <MarketSalesSection
-        asset={asset}
+        asset={marketAsset}
         lots={lots}
         data={marketSales}
+        predictions={marketPredictions}
         ebayListings={ebayListings}
         listingsAsOf={listingsAsOf}
         listingsError={listingsError}

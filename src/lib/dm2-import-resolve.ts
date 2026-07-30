@@ -1,6 +1,11 @@
 import { createId } from "@/lib/create-id";
 import { applyCatalogCardSetHintsToRows } from "@/lib/dm2-import-catalog-hints";
-import { reconcileExtractedRowsWithCatalogParallels } from "@/lib/dm2-import-parallel-reconcile";
+import {
+  dm2ImportDebugLog,
+  dm2ImportDebugWarn,
+  summarizeDm2Proposals,
+} from "@/lib/dm2-import-debug";
+import { reconcileExtractedRowsWithCatalogParallels, parallelTokenAppearsInBothNameAndParallel } from "@/lib/dm2-import-parallel-reconcile";
 import type {
   Dm2ExtractedRow,
   Dm2FieldSuggestion,
@@ -22,6 +27,25 @@ export const DM2_EXISTING_VALUE_MATCH_THRESHOLD = 0.95;
 
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
+}
+
+export function collectProtectedCardSetNameKeys(
+  catalog: Dm2ImportCatalogContext,
+  proposals?: Dm2LookupProposal[]
+): Set<string> {
+  const keys = new Set(
+    catalog.cardSetNames.map((setName) => normalizeKey(setName.name))
+  );
+
+  if (proposals) {
+    for (const proposal of proposals) {
+      if (proposal.entityType === "cardSetName" && proposal.proposedName.trim()) {
+        keys.add(normalizeKey(proposal.proposedName));
+      }
+    }
+  }
+
+  return keys;
 }
 
 function mergeContext(
@@ -386,7 +410,8 @@ function buildIssues(
   rows: Dm2ExtractedRow[],
   proposals: Dm2LookupProposal[],
   sessionContext: Dm2ImportSessionContext,
-  duplicateResolutions?: Record<string, Dm2DuplicateResolution>
+  duplicateResolutions?: Record<string, Dm2DuplicateResolution>,
+  catalogParallels?: string[]
 ): Dm2ImportIssue[] {
   const issues: Dm2ImportIssue[] = [];
   const summarizeRowIssues = rows.length > DM2_IMPORT_LARGE_ISSUE_ROW_THRESHOLD;
@@ -502,6 +527,24 @@ function buildIssues(
         type: "UNSUPPORTED_FIELD",
         severity: "warning",
         message: `Row ${row.sourceRowIndex} (${row.sourceFileName}): unsupported fields detected (${Object.keys(row.unsupportedFields).join(", ")})`,
+        rowIds: [row.id],
+      });
+    }
+
+    if (
+      !summarizeRowIssues &&
+      catalogParallels &&
+      parallelTokenAppearsInBothNameAndParallel(
+        row.cardSetName,
+        row.parallel,
+        catalogParallels
+      )
+    ) {
+      issues.push({
+        id: createId(),
+        type: "MAPPING_SUGGESTION",
+        severity: "warning",
+        message: `Row ${row.sourceRowIndex} (${row.sourceFileName}): parallel may be split across card set name and parallel — use a single parallel (e.g. "Fast Break Pink" not name ending "Fast Break" + parallel "Pink")`,
         rowIds: [row.id],
       });
     }
@@ -698,18 +741,35 @@ export function buildDm2ImportSession(input: {
   suggestions?: Dm2FieldSuggestion[];
   researchNotes?: Dm2ImportResearchNote[];
   mappingFramework?: Dm2MappingFrameworkNote[];
+  protectedCardSetNameKeys?: Set<string>;
+  proposalsForProtection?: Dm2LookupProposal[];
 }): Dm2ImportSession {
   const sessionContext =
     input.sessionContext ?? mergeContext(input.contexts);
+  const protectedCardSetNameKeys =
+    input.protectedCardSetNameKeys ??
+    (input.proposalsForProtection
+      ? collectProtectedCardSetNameKeys(
+          input.catalog,
+          input.proposalsForProtection
+        )
+      : undefined);
   const hintedRows = applyCatalogCardSetHintsToRows(input.rows, input.catalog);
   const contextualRows = applySessionContextToRows(hintedRows, sessionContext);
   const rows = reconcileExtractedRowsWithCatalogParallels(
     contextualRows,
-    input.catalog
+    input.catalog,
+    protectedCardSetNameKeys
   );
   const proposals = buildLookupProposals(rows, input.catalog);
   const issues = [
-    ...buildIssues(rows, proposals, sessionContext),
+    ...buildIssues(
+      rows,
+      proposals,
+      sessionContext,
+      undefined,
+      input.catalog.parallels.map((parallel) => parallel.name)
+    ),
     ...buildSuggestionIssues(input.suggestions ?? []),
   ];
 
@@ -782,6 +842,7 @@ function mergeProposalActions(
     if (!prior) return proposal;
     return {
       ...proposal,
+      id: prior.id,
       action: prior.action,
       matchId: prior.matchId,
       matchName: prior.matchName,
@@ -808,18 +869,42 @@ export function rebuildDm2ImportSession(
     suggestions: session.suggestions,
     researchNotes: session.researchNotes,
     mappingFramework: session.mappingFramework,
+    proposalsForProtection: previousProposals,
   });
 
   const mergedProposals = mergeProposalActions(
     previousProposals,
     rebuilt.proposals
   );
+
+  const preservedIdCount = mergedProposals.filter((proposal) => {
+    const prior = previousProposals.find(
+      (item) => item.normalizedKey === proposal.normalizedKey
+    );
+    return prior != null && prior.id === proposal.id;
+  }).length;
+  const rebuiltIdMatches = rebuilt.proposals.filter((proposal) =>
+    previousProposals.some(
+      (item) =>
+        item.normalizedKey === proposal.normalizedKey && item.id === proposal.id
+    )
+  ).length;
+
+  dm2ImportDebugLog("rebuild", "Session rebuilt", {
+    rowCount: rebuilt.rows.length,
+    proposalCountBefore: previousProposals.length,
+    proposalCountRebuilt: rebuilt.proposals.length,
+    proposalCountAfterMerge: mergedProposals.length,
+    preservedIdCount,
+    rebuiltIdMatchesWithoutMerge: rebuiltIdMatches,
+  });
   const issues = [
     ...buildIssues(
       rebuilt.rows,
       mergedProposals,
       rebuilt.sessionContext,
-      session.duplicateResolutions
+      session.duplicateResolutions,
+      session.catalog.parallels.map((parallel) => parallel.name)
     ),
     ...buildSuggestionIssues(session.suggestions ?? []),
   ];
@@ -970,7 +1055,8 @@ export function updateDm2ProposalProposedName(
       rows,
       proposals,
       sessionContext,
-      session.duplicateResolutions
+      session.duplicateResolutions,
+      session.catalog.parallels.map((parallel) => parallel.name)
     ),
     ...buildSuggestionIssues(session.suggestions ?? []),
   ];
@@ -1012,34 +1098,162 @@ function rowReferencesProposal(
   return true;
 }
 
+function compositeCardSetName(row: Dm2ExtractedRow): string | null {
+  const cardSetName = row.cardSetName?.trim();
+  if (!cardSetName) return null;
+  const parallel = row.parallel?.trim();
+  return parallel ? `${cardSetName} ${parallel}`.trim() : cardSetName;
+}
+
+function rowReferencesProposalForMerge(
+  row: Dm2ExtractedRow,
+  source: Dm2LookupProposal,
+  target: Dm2LookupProposal
+): boolean {
+  if (rowReferencesProposal(row, source)) return true;
+  if (source.entityType !== "cardSetName") return false;
+
+  const composite = compositeCardSetName(row);
+  if (!composite) return false;
+
+  const compositeKey = normalizeKey(composite);
+  const sourceKey = normalizeKey(source.proposedName);
+  const targetKey = normalizeKey(target.proposedName);
+
+  if (compositeKey === sourceKey) return true;
+
+  if (compositeKey === targetKey && targetKey.startsWith(`${sourceKey} `)) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldClearParallelOnCardSetNameMerge(
+  row: Dm2ExtractedRow,
+  sourceName: string,
+  targetName: string
+): boolean {
+  const parallel = row.parallel?.trim();
+  if (!parallel) return false;
+
+  const targetKey = normalizeKey(targetName);
+  const sourceKey = normalizeKey(sourceName);
+  const parallelKey = normalizeKey(parallel);
+  const cardSetName = row.cardSetName?.trim() ?? "";
+  const candidates = [
+    `${sourceName} ${parallel}`,
+    `${cardSetName} ${parallel}`,
+    compositeCardSetName(row) ?? "",
+  ];
+
+  if (candidates.some((value) => normalizeKey(value) === targetKey)) {
+    return true;
+  }
+
+  if (!targetKey.startsWith(`${sourceKey} `)) return false;
+
+  const suffix = targetName.slice(sourceName.length).trim();
+  if (!suffix) return false;
+
+  const suffixKey = normalizeKey(suffix);
+  return (
+    parallelKey === suffixKey ||
+    parallelKey.endsWith(` ${suffixKey}`) ||
+    normalizeKey(`${sourceName} ${suffix}`) === targetKey
+  );
+}
+
 /** Move all row references from one lookup proposal to another, removing the source. */
 export function mergeDm2ProposalReferences(
   session: Dm2ImportSession,
   sourceProposalId: string,
   targetProposalId: string
 ): Dm2ImportSession {
-  if (sourceProposalId === targetProposalId) return session;
+  dm2ImportDebugLog("mergeRefs", "Merge requested", {
+    sourceProposalId,
+    targetProposalId,
+    proposalCount: session.proposals.length,
+    proposals: summarizeDm2Proposals(session.proposals),
+  });
+
+  if (sourceProposalId === targetProposalId) {
+    dm2ImportDebugWarn("mergeRefs", "Merge aborted: source and target ids match");
+    return session;
+  }
 
   const source = session.proposals.find((item) => item.id === sourceProposalId);
   const target = session.proposals.find((item) => item.id === targetProposalId);
-  if (!source || !target) return session;
-  if (source.entityType !== target.entityType) return session;
+  if (!source || !target) {
+    dm2ImportDebugWarn("mergeRefs", "Merge aborted: proposal id not found in session", {
+      sourceProposalId,
+      targetProposalId,
+      sourceFound: Boolean(source),
+      targetFound: Boolean(target),
+      proposals: summarizeDm2Proposals(session.proposals),
+    });
+    return session;
+  }
+  if (source.entityType !== target.entityType) {
+    dm2ImportDebugWarn("mergeRefs", "Merge aborted: entity type mismatch", {
+      sourceType: source.entityType,
+      targetType: target.entityType,
+      sourceName: source.proposedName,
+      targetName: target.proposedName,
+    });
+    return session;
+  }
   if (
     source.entityType === "brand" &&
     normalizeKey(source.manufacturerName ?? "") !==
       normalizeKey(target.manufacturerName ?? "")
   ) {
+    dm2ImportDebugWarn("mergeRefs", "Merge aborted: brand manufacturer mismatch", {
+      sourceManufacturer: source.manufacturerName,
+      targetManufacturer: target.manufacturerName,
+      sourceName: source.proposedName,
+      targetName: target.proposedName,
+    });
     return session;
   }
 
   const field = entityTypeToRowField(source.entityType);
-  if (!field) return session;
+  if (!field) {
+    dm2ImportDebugWarn("mergeRefs", "Merge aborted: no row field for entity type", {
+      entityType: source.entityType,
+    });
+    return session;
+  }
 
   const targetName = target.proposedName;
+  let movedRowCount = 0;
   const rows = session.rows.map((row) => {
-    if (!rowReferencesProposal(row, source)) return row;
-    return { ...row, [field]: targetName };
+    if (!rowReferencesProposalForMerge(row, source, target)) return row;
+    movedRowCount += 1;
+
+    const nextRow: Dm2ExtractedRow = { ...row, [field]: targetName };
+
+    if (
+      source.entityType === "cardSetName" &&
+      shouldClearParallelOnCardSetNameMerge(row, source.proposedName, targetName)
+    ) {
+      nextRow.parallel = undefined;
+    }
+
+    return nextRow;
   });
+
+  if (movedRowCount === 0) {
+    dm2ImportDebugWarn("mergeRefs", "Merge warning: zero rows matched source proposal", {
+      sourceProposalId,
+      sourceName: source.proposedName,
+      sourceRefs: source.referenceCount,
+      field,
+      sampleRowValues: session.rows
+        .slice(0, 5)
+        .map((row) => ({ rowId: row.id, value: row[field as keyof typeof row] })),
+    });
+  }
 
   const sessionContext = { ...session.sessionContext };
   const contextField = entityTypeToContextField(source.entityType);
@@ -1058,7 +1272,30 @@ export function mergeDm2ProposalReferences(
     }
   }
 
-  return rebuildDm2ImportSession({ ...session, rows, sessionContext });
+  const next = rebuildDm2ImportSession({ ...session, rows, sessionContext });
+
+  dm2ImportDebugLog("mergeRefs", "Merge completed", {
+    source: {
+      id: source.id,
+      name: source.proposedName,
+      refs: source.referenceCount,
+    },
+    target: {
+      id: target.id,
+      name: target.proposedName,
+      refsBefore: target.referenceCount,
+    },
+    movedRowCount,
+    field,
+    targetName,
+    proposalCountBefore: session.proposals.length,
+    proposalCountAfter: next.proposals.length,
+    proposalsAfter: summarizeDm2Proposals(next.proposals),
+    sourceRemoved: !next.proposals.some((item) => item.id === sourceProposalId),
+    targetStillPresent: next.proposals.some((item) => item.id === targetProposalId),
+  });
+
+  return next;
 }
 
 export function getMergeTargetProposals(
@@ -1066,9 +1303,15 @@ export function getMergeTargetProposals(
   sourceProposalId: string
 ): Dm2LookupProposal[] {
   const source = session.proposals.find((item) => item.id === sourceProposalId);
-  if (!source) return [];
+  if (!source) {
+    dm2ImportDebugWarn("mergeTargets", "No merge targets: source proposal missing", {
+      sourceProposalId,
+      proposals: summarizeDm2Proposals(session.proposals),
+    });
+    return [];
+  }
 
-  return session.proposals
+  const targets = session.proposals
     .filter((proposal) => {
       if (proposal.id === sourceProposalId) return false;
       if (proposal.entityType !== source.entityType) return false;
@@ -1081,6 +1324,8 @@ export function getMergeTargetProposals(
       return true;
     })
     .sort((a, b) => a.proposedName.localeCompare(b.proposedName));
+
+  return targets;
 }
 
 /** Clear parallel from all rows referencing a parallel proposal (not a real parallel). */
