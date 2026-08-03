@@ -2,9 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import {
+  DM2_CARD_NUMBER_MAX_LENGTH,
+  DM2_CARD_PLAYER_MAX_LENGTH,
+} from "@/lib/dm2-field-limits";
 import { normalizeRpcRows } from "@/lib/supabase/rpc-rows";
 import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
+import { DM2_CARD_SEARCH_PAGE_SIZE } from "@/types/data-model-v2";
 
 const MAX_NAME_LENGTH = 100;
 
@@ -861,16 +866,17 @@ export async function deleteDm2CardSet(id: string): Promise<{ error?: string }> 
 
 function validateCardField(
   value: string,
-  fieldLabel: string
+  fieldLabel: string,
+  maxLength = MAX_NAME_LENGTH
 ): { value: string; error: string | null } {
   const trimmed = value.trim();
   if (!trimmed) {
     return { value: trimmed, error: `${fieldLabel} is required.` };
   }
-  if (trimmed.length > MAX_NAME_LENGTH) {
+  if (trimmed.length > maxLength) {
     return {
       value: trimmed,
-      error: `${fieldLabel} must be ${MAX_NAME_LENGTH} characters or fewer.`,
+      error: `${fieldLabel} must be ${maxLength} characters or fewer.`,
     };
   }
   return { value: trimmed, error: null };
@@ -889,10 +895,18 @@ export async function createDm2Card(input: {
     return { error: "Card set is required." };
   }
 
-  const cardNumber = validateCardField(input.cardNumber, "Card #");
+  const cardNumber = validateCardField(
+    input.cardNumber,
+    "Card #",
+    DM2_CARD_NUMBER_MAX_LENGTH
+  );
   if (cardNumber.error) return { error: cardNumber.error };
 
-  const player = validateCardField(input.player, "Player");
+  const player = validateCardField(
+    input.player,
+    "Player",
+    DM2_CARD_PLAYER_MAX_LENGTH
+  );
   if (player.error) return { error: player.error };
 
   const supabase = await createClient();
@@ -929,10 +943,18 @@ export async function updateDm2Card(input: {
     return { error: "Card set is required." };
   }
 
-  const cardNumber = validateCardField(input.cardNumber, "Card #");
+  const cardNumber = validateCardField(
+    input.cardNumber,
+    "Card #",
+    DM2_CARD_NUMBER_MAX_LENGTH
+  );
   if (cardNumber.error) return { error: cardNumber.error };
 
-  const player = validateCardField(input.player, "Player");
+  const player = validateCardField(
+    input.player,
+    "Player",
+    DM2_CARD_PLAYER_MAX_LENGTH
+  );
   if (player.error) return { error: player.error };
 
   const supabase = await createClient();
@@ -1193,11 +1215,24 @@ export async function fetchDm2CardCountsBySetId(): Promise<{
 }
 
 export async function searchDm2Cards(
-  query: string
-): Promise<{ error?: string; cards?: import("@/types/data-model-v2").Dm2CardSearchResult[] }> {
+  query: string,
+  options?: { page?: number; pageSize?: number }
+): Promise<{
+  error?: string;
+  cards?: import("@/types/data-model-v2").Dm2CardSearchResult[];
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+}> {
   const trimmed = query.trim();
+  const pageSize = Math.min(
+    Math.max(options?.pageSize ?? DM2_CARD_SEARCH_PAGE_SIZE, 1),
+    100
+  );
+  const page = Math.max(options?.page ?? 1, 1);
+
   if (trimmed.length < 2) {
-    return { cards: [] };
+    return { cards: [], totalCount: 0, page: 1, pageSize };
   }
 
   const supabase = await createClient();
@@ -1209,19 +1244,48 @@ export async function searchDm2Cards(
     return { error: "You must be signed in to search the card catalog." };
   }
 
-  const { data, error } = await supabase.rpc("search_dm2_cards", {
+  const offset = (page - 1) * pageSize;
+
+  let { data, error } = await supabase.rpc("search_dm2_cards", {
     query: trimmed,
-    lim: 50,
+    lim: pageSize,
+    row_offset: offset,
   });
+
+  let usesLegacySearch = false;
+  if (error && /Could not find the function public\.search_dm2_cards/i.test(error.message)) {
+    if (page > 1 || offset > 0) {
+      return {
+        error:
+          "Paginated card search is not available yet. Run migration 044 in the Supabase SQL editor, then open Settings → API and reload the schema cache.",
+      };
+    }
+
+    ({ data, error } = await supabase.rpc("search_dm2_cards", {
+      query: trimmed,
+      lim: pageSize,
+    }));
+    usesLegacySearch = true;
+  }
 
   if (error) {
     return { error: error.message };
   }
 
+  const rows = normalizeRpcRows(data);
+  const totalCount = usesLegacySearch
+    ? rows.length
+    : rows.length > 0
+      ? Number((rows[0] as { total_count?: number }).total_count ?? 0)
+      : 0;
+
   return {
-    cards: normalizeRpcRows(data).map((row) =>
+    cards: rows.map((row) =>
       mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
     ),
+    totalCount,
+    page,
+    pageSize,
   };
 }
 

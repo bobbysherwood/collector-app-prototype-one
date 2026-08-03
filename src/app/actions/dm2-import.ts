@@ -10,6 +10,10 @@ import {
 } from "@/lib/dm2-import-ai";
 import { buildDm2CatalogSummary } from "@/lib/dm2-import-catalog-summary";
 import {
+  DM2_CARD_NUMBER_MAX_LENGTH,
+  DM2_CARD_PLAYER_MAX_LENGTH,
+} from "@/lib/dm2-field-limits";
+import {
   DM2_IMPORT_LARGE_ROW_THRESHOLD,
   DM2_IMPORT_MAX_FILES,
   DM2_IMPORT_MAX_FILE_BYTES,
@@ -1317,6 +1321,34 @@ export async function commitDm2ImportSession(
       stats.pushError({
         code: "row_incomplete",
         message: `Missing required fields: ${missingFields.join(", ")}`,
+        rowId: row.id,
+        sourceFileName: row.sourceFileName,
+        sourceRowIndex: row.sourceRowIndex,
+        cardNumber: row.cardNumber,
+        player: row.player,
+        cardSetName: row.cardSetName,
+      });
+      continue;
+    }
+
+    const trimmedCardNumber = row.cardNumber.trim();
+    const trimmedPlayer = row.player.trim();
+    const fieldLengthIssues: string[] = [];
+    if (trimmedCardNumber.length > DM2_CARD_NUMBER_MAX_LENGTH) {
+      fieldLengthIssues.push(
+        `card # exceeds ${DM2_CARD_NUMBER_MAX_LENGTH} characters (${trimmedCardNumber.length})`
+      );
+    }
+    if (trimmedPlayer.length > DM2_CARD_PLAYER_MAX_LENGTH) {
+      fieldLengthIssues.push(
+        `player exceeds ${DM2_CARD_PLAYER_MAX_LENGTH} characters (${trimmedPlayer.length})`
+      );
+    }
+    if (fieldLengthIssues.length > 0) {
+      stats.incrementCardsFailed();
+      stats.pushError({
+        code: "row_incomplete",
+        message: fieldLengthIssues.join("; "),
         rowId: row.id,
         sourceFileName: row.sourceFileName,
         sourceRowIndex: row.sourceRowIndex,

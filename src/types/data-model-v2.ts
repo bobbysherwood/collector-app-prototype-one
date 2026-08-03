@@ -1,3 +1,5 @@
+export const DM2_CARD_SEARCH_PAGE_SIZE = 24;
+
 export interface Dm2CardSetCategory {
   id: string;
   name: string;

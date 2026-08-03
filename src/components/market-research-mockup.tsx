@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Bell, Bookmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dm2CardSearchTiles } from "@/components/dm2-card-search-tiles";
 import { MarketResearchSearchPanel } from "@/components/market-research-search-panel";
 import type { MarketResearchSearchSelection } from "@/types/data-model-v2";
 
@@ -46,6 +47,22 @@ export function MarketResearchMockup() {
         selection={selection}
         onSelectionChange={setSelection}
       />
+
+      {selection?.type === "player" ? (
+        <Dm2CardSearchTiles
+          key={`player-results-${selection.player.player}`}
+          fixedQuery={selection.player.player}
+          hideSearchInput
+        />
+      ) : null}
+
+      {selection?.type === "sport" ? (
+        <Dm2CardSearchTiles
+          key={`sport-results-${selection.sport.sport}`}
+          fixedQuery={selection.sport.sport}
+          hideSearchInput
+        />
+      ) : null}
     </div>
   );
 }
