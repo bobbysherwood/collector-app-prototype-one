@@ -11,11 +11,9 @@ import {
 } from "@/lib/dm2-import-parallel-reconcile";
 import {
   applyP0CardSetSplitCorrections,
-  buildBasePrefixedSplitIndex,
+  applyRawValueCardSetSplitCorrections,
   buildCardSetSplitIndex,
-  buildSiblingParallelFamilySplitIndex,
-  buildSpectraCrossYearSplitIndex,
-  buildSpectraProductLineBaseSplitIndex,
+  buildP0CardSetSplitCaches,
   countCardSetPrefixFamilyMembers,
   findCardSetRoots,
   findSharedCardSetNameFromValues,
@@ -24,10 +22,12 @@ import {
   normalizeCardSetRootName,
   reconcileParallelModifierStemInSetName,
   reconcileInsertParallelTierInSetName,
-  resolveBaseCardSetDisplayName,
   resolveFinalCardSetCategory,
-  usesSpectraCardSetRules,
+  resolveBrandFromProgramAndBrand,
   resolveManufacturerFromBrand,
+  resolveManufacturerFromProgramAndBrand,
+  shouldSkipExclusiveResplitForRawValue,
+  usesSpectraCardSetRules,
   suffixAfterWordPrefix,
 } from "@/lib/dm2-import-spreadsheet-split";
 import type {
@@ -225,7 +225,10 @@ export function applySpreadsheetColumnFixes(
     (label) => normalizeKey(label) === "card set"
   );
 
-  if (programIndex >= 0) {
+  if (programIndex >= 0 && brandHeaderIndex >= 0) {
+    columns.brand = brandHeaderIndex;
+    delete columns.manufacturer;
+  } else if (programIndex >= 0) {
     columns.brand = programIndex;
     delete columns.manufacturer;
   }
@@ -318,7 +321,8 @@ export function inferColumnMappingHeuristic(
 
   if (columns.cardNumber == null && columns.player == null) return null;
 
-  return applySpreadsheetColumnFixes(
+  const defaultMetadata = inferDefaultMetadataFromSheet(
+    sheet,
     {
       sheetIndex,
       headerRowIndex,
@@ -329,6 +333,62 @@ export function inferColumnMappingHeuristic(
     },
     headerRow
   );
+
+  return applySpreadsheetColumnFixes(
+    {
+      sheetIndex,
+      headerRowIndex,
+      dataStartRowIndex: headerRowIndex + 1,
+      columns,
+      defaultMetadata,
+      confidence: 0.65,
+    },
+    headerRow
+  );
+}
+
+function inferDefaultMetadataFromSheet(
+  sheet: Dm2SpreadsheetData["sheets"][number],
+  mapping: Dm2ColumnMapping,
+  headerRow: unknown[]
+): Dm2ImportSessionContext {
+  const headers = headerLabels(headerRow);
+  const programIndex = headers.findIndex(
+    (label) => normalizeKey(label) === "program"
+  );
+  const brandHeaderIndex = headers.findIndex(
+    (label) => normalizeKey(label) === "brand"
+  );
+  const firstRow = sheet.rows[mapping.dataStartRowIndex];
+  if (!firstRow) return {};
+
+  const metadata: Dm2ImportSessionContext = {};
+
+  if (mapping.columns.sport != null) {
+    const sport = cellToString(firstRow[mapping.columns.sport]);
+    if (sport) metadata.sport = sport;
+  }
+
+  if (mapping.columns.year != null) {
+    const year = parseYearValue(firstRow[mapping.columns.year]);
+    if (year) metadata.year = year;
+  }
+
+  const programValue =
+    programIndex >= 0 ? cellToString(firstRow[programIndex]) : undefined;
+  const brandColumnValue =
+    brandHeaderIndex >= 0 ? cellToString(firstRow[brandHeaderIndex]) : undefined;
+  const brand = resolveBrandFromProgramAndBrand(programValue, brandColumnValue);
+  if (brand) {
+    metadata.brand = brand;
+    metadata.manufacturer = resolveManufacturerFromProgramAndBrand(
+      programValue,
+      brandColumnValue,
+      brand
+    );
+  }
+
+  return metadata;
 }
 
 export function collectDistinctColumnValues(input: {
@@ -441,6 +501,13 @@ export function extractRowsFromSpreadsheet(input: {
   const headerRow = sheet.rows[input.mapping.headerRowIndex] ?? [];
   const mapping = applySpreadsheetColumnFixes(input.mapping, headerRow);
   const { columns, defaultMetadata, dataStartRowIndex } = mapping;
+  const headers = headerLabels(headerRow);
+  const programColumnIndex = headers.findIndex(
+    (label) => normalizeKey(label) === "program"
+  );
+  const brandHeaderIndex = headers.findIndex(
+    (label) => normalizeKey(label) === "brand"
+  );
   const combinedColumn =
     mapping.combinedCardSetColumn ?? columns.cardSetName;
   const aiSplits = mapping.cardSetValueSplits ?? {};
@@ -459,14 +526,30 @@ export function extractRowsFromSpreadsheet(input: {
       (columns.year != null ? parseYearValue(row[columns.year]) : undefined) ??
       defaultMetadata.year;
 
-    const rawBrand =
-      readMappedCell(row, columns.brand) ?? defaultMetadata.brand;
-    const brand = rawBrand ? normalizeBrandProgramName(rawBrand) : undefined;
+    const brandColumnValue =
+      brandHeaderIndex >= 0 ? readMappedCell(row, brandHeaderIndex) : undefined;
+    const programValue =
+      programColumnIndex >= 0 ? readMappedCell(row, programColumnIndex) : undefined;
+    const resolvedBrand =
+      resolveBrandFromProgramAndBrand(programValue, brandColumnValue) ??
+      (readMappedCell(row, columns.brand)
+        ? normalizeBrandProgramName(readMappedCell(row, columns.brand)!)
+        : undefined) ??
+      defaultMetadata.brand;
+    const brand = resolvedBrand
+      ? normalizeBrandProgramName(resolvedBrand)
+      : undefined;
     const manufacturer =
+      resolveManufacturerFromProgramAndBrand(
+        programValue,
+        brandColumnValue,
+        brand
+      ) ??
       resolveManufacturerFromBrand({
         brand,
         catalogBrands: input.catalog?.brands,
-      }) ?? defaultMetadata.manufacturer;
+      }) ??
+      defaultMetadata.manufacturer;
 
     let cardSetCategory =
       readMappedCell(row, columns.cardSetCategory) ??
@@ -563,9 +646,10 @@ export type Dm2CardSetValueSplit = {
 };
 
 function buildProgrammaticCardSetValueSplits(
-  distinctValues: string[]
+  distinctValues: string[],
+  caches?: ReturnType<typeof buildP0CardSetSplitCaches>
 ): Record<string, Dm2CardSetValueSplit> {
-  const index = buildCardSetSplitIndex(distinctValues);
+  const index = buildCardSetSplitIndex(distinctValues, caches);
   const splits: Record<string, Dm2CardSetValueSplit> = {};
 
   for (const [rawValue, split] of index) {
@@ -828,6 +912,17 @@ function applyCatalogInformedParallelSplits(
   }
 }
 
+function isProtectedBasePrefixedSubsetValue(
+  rawValue: string,
+  baseIndex: Map<
+    string,
+    { cardSetName: string; parallel?: string; cardSetCategory: string }
+  >
+): boolean {
+  const split = baseIndex.get(rawValue.trim());
+  return split?.cardSetCategory === "Subset";
+}
+
 export function enrichCardSetValueSplits(input: {
   distinctValues: string[];
   splits: Record<string, Dm2CardSetValueSplit>;
@@ -835,7 +930,11 @@ export function enrichCardSetValueSplits(input: {
   catalogCardSetNames?: string[];
   catalogInsertSetNames?: string[];
 }): Record<string, Dm2CardSetValueSplit> {
-  const programmatic = buildProgrammaticCardSetValueSplits(input.distinctValues);
+  const p0SplitCaches = buildP0CardSetSplitCaches(input.distinctValues);
+  const programmatic = buildProgrammaticCardSetValueSplits(
+    input.distinctValues,
+    p0SplitCaches
+  );
   const enriched = { ...programmatic, ...input.splits };
 
   for (const rawValue of input.distinctValues) {
@@ -857,6 +956,14 @@ export function enrichCardSetValueSplits(input: {
   for (const rawValue of input.distinctValues) {
     const split = enriched[rawValue];
     if (!split) continue;
+    if (
+      isProtectedBasePrefixedSubsetValue(
+        rawValue,
+        p0SplitCaches.baseIndex ?? new Map()
+      )
+    ) {
+      continue;
+    }
     enriched[rawValue] = correctCardSetValueSplit(
       split,
       rawValue.trim(),
@@ -873,6 +980,14 @@ export function enrichCardSetValueSplits(input: {
 
     const normalizedRaw = rawValue.trim();
     if (!normalizedRaw) continue;
+    if (
+      isProtectedBasePrefixedSubsetValue(
+        rawValue,
+        p0SplitCaches.baseIndex ?? new Map()
+      )
+    ) {
+      continue;
+    }
 
     const bestParallel = resolveBestParallelSuffix(
       normalizedRaw,
@@ -954,6 +1069,14 @@ export function enrichCardSetValueSplits(input: {
   for (const rawValue of input.distinctValues) {
     const split = enriched[rawValue];
     if (!split) continue;
+    if (
+      isProtectedBasePrefixedSubsetValue(
+        rawValue,
+        p0SplitCaches.baseIndex ?? new Map()
+      )
+    ) {
+      continue;
+    }
     enriched[rawValue] = correctCardSetValueSplit(
       split,
       rawValue.trim(),
@@ -987,6 +1110,15 @@ export function enrichCardSetValueSplits(input: {
   for (const rawValue of input.distinctValues) {
     const split = enriched[rawValue];
     if (!split) continue;
+    if (shouldSkipExclusiveResplitForRawValue(rawValue.trim())) continue;
+    if (
+      isProtectedBasePrefixedSubsetValue(
+        rawValue,
+        p0SplitCaches.baseIndex ?? new Map()
+      )
+    ) {
+      continue;
+    }
     enriched[rawValue] = reconcileOverlappingSetNameParallelWords(
       reconcileCardSetNameExclusiveParallelSplit(
         correctCardSetValueSplit(
@@ -998,25 +1130,6 @@ export function enrichCardSetValueSplits(input: {
       )
     );
   }
-
-  for (const rawValue of input.distinctValues) {
-    const split = enriched[rawValue];
-    if (!split) continue;
-    enriched[rawValue] = reconcileOverlappingSetNameParallelWords(
-      reconcileCardSetNameExclusiveParallelSplit(split)
-    );
-  }
-
-  const p0SplitCaches = {
-    siblingIndex: buildSiblingParallelFamilySplitIndex(input.distinctValues),
-    baseIndex: buildBasePrefixedSplitIndex(input.distinctValues),
-    spectraIndex: buildSpectraCrossYearSplitIndex(input.distinctValues),
-    spectraProductLineBaseIndex: buildSpectraProductLineBaseSplitIndex(
-      input.distinctValues
-    ),
-    baseSetDisplayName: resolveBaseCardSetDisplayName(input.distinctValues),
-    usesSpectraCardSetRules: usesSpectraCardSetRules(input.distinctValues),
-  };
 
   for (const rawValue of input.distinctValues) {
     const split = enriched[rawValue];
@@ -1034,27 +1147,12 @@ export function enrichCardSetValueSplits(input: {
   for (const rawValue of input.distinctValues) {
     const split = enriched[rawValue];
     if (!split) continue;
-    const reconciled = reconcileOverlappingSetNameParallelWords(
-      reconcileCardSetNameExclusiveParallelSplit(split)
-    );
-    const modifierAdjusted = reconcileParallelModifierStemInSetName(
-      reconciled,
-      input.distinctValues
-    );
-    const tierAdjusted = reconcileInsertParallelTierInSetName(
-      modifierAdjusted,
+    enriched[rawValue] = applyRawValueCardSetSplitCorrections(
+      split,
       rawValue.trim(),
-      input.distinctValues
+      input.distinctValues,
+      { usesSpectraCardSetRules: usesSpectraRules }
     );
-    enriched[rawValue] = {
-      ...tierAdjusted,
-      cardSetCategory: resolveFinalCardSetCategory(
-        tierAdjusted.cardSetName,
-        rawValue.trim(),
-        tierAdjusted.cardSetCategory,
-        { usesSpectraCardSetRules: usesSpectraRules }
-      ),
-    };
   }
 
   return enriched;

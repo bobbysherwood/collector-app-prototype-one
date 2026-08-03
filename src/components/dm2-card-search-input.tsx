@@ -42,6 +42,7 @@ export function Dm2CardSearchInput({
 }: Dm2CardSearchInputProps) {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Dm2CardSearchResult[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -61,6 +62,7 @@ export function Dm2CardSearchInput({
   useEffect(() => {
     if (!canSearch) {
       setResults([]);
+      setTotalCount(0);
       setSearched(false);
       setError(null);
       setLoading(false);
@@ -71,7 +73,7 @@ export function Dm2CardSearchInput({
     setLoading(true);
     setError(null);
 
-    searchDm2Cards(debouncedQuery).then((result) => {
+    searchDm2Cards(debouncedQuery, { page: 1, pageSize: 50 }).then((result) => {
       if (cancelled) return;
 
       setLoading(false);
@@ -80,10 +82,12 @@ export function Dm2CardSearchInput({
       if (result.error) {
         setError(result.error);
         setResults([]);
+        setTotalCount(0);
         return;
       }
 
       setResults(result.cards ?? []);
+      setTotalCount(result.totalCount ?? result.cards?.length ?? 0);
       setOpen(true);
     });
 
@@ -143,13 +147,14 @@ export function Dm2CardSearchInput({
                 </li>
               ))}
             </ul>
-            {results.length >= 50 ? (
+            {totalCount > results.length ? (
               <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-                Showing first 50 matches — refine your search for more.
+                Showing first {results.length} of {totalCount.toLocaleString()} matches — use
+                Market Research card search for full paginated results.
               </p>
             ) : (
               <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-                {results.length} match{results.length === 1 ? "" : "es"}
+                {totalCount} match{totalCount === 1 ? "" : "es"}
               </p>
             )}
           </div>,

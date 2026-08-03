@@ -1,4 +1,4 @@
-import { findCardSetRoots, isSpectraCrossYearCombinedValue, normalizeCardSetRootName, countCardSetPrefixFamilyMembers } from "@/lib/dm2-import-spreadsheet-split";
+import { findCardSetRoots, isCrossProductYearCombinedValue, isSpectraCrossYearCombinedValue, normalizeCardSetRootName, countCardSetPrefixFamilyMembers } from "@/lib/dm2-import-spreadsheet-split";
 import type { Dm2ExtractedRow, Dm2ImportCatalogContext } from "@/types/dm2-import";
 
 type CardSetValueSplit = {
@@ -49,6 +49,8 @@ export function shouldPreserveAtomicCardSetValue(value: string): boolean {
 
   if (isSpectraCrossYearCombinedValue(trimmed)) return false;
 
+  if (isCrossProductYearCombinedValue(trimmed)) return false;
+
   const dashIndex = trimmed.indexOf(" - ");
   if (dashIndex < 0) return false;
 
@@ -73,6 +75,16 @@ export function filterCardSetNameExclusiveParallelCandidates(
   );
 }
 
+/** Parallel phrases where Autographs/Signatures are part of the parallel name, not split into cardSetName. */
+const COMPOUND_EXCLUSIVE_PARALLEL_PHRASES = [
+  "premium box set autographs",
+];
+
+function isCompoundExclusiveParallelPhrase(parallel: string): boolean {
+  const key = parallel.trim().toLowerCase();
+  return COMPOUND_EXCLUSIVE_PARALLEL_PHRASES.some((phrase) => key === phrase);
+}
+
 /** Move Signature/Autograph vocabulary from parallel into cardSetName. */
 export function reconcileCardSetNameExclusiveParallelSplit<
   T extends {
@@ -83,6 +95,10 @@ export function reconcileCardSetNameExclusiveParallelSplit<
 >(split: T): T {
   const parallel = split.parallel?.trim();
   if (!parallel || !parallelContainsCardSetNameExclusiveToken(parallel)) {
+    return reconcileExclusiveTokenTrailingParallelInSetName(split);
+  }
+
+  if (isCompoundExclusiveParallelPhrase(parallel)) {
     return reconcileExclusiveTokenTrailingParallelInSetName(split);
   }
 
@@ -312,6 +328,33 @@ export function buildExtendedParallelCandidates(
   return [...byKey.values()].sort((a, b) => b.length - a.length);
 }
 
+/** True when a catalog parallel token is part of the insert name, not a peelable suffix. */
+function isParallelPrefixEmbeddedInCardSetName(
+  cardSetName: string,
+  parallelPrefix: string
+): boolean {
+  const trimmed = cardSetName.trim();
+  const nameKey = normalizeKey(trimmed);
+  const prefixKey = normalizeKey(parallelPrefix);
+
+  if (nameKey === "elite gold" && prefixKey === "gold") return true;
+  if (nameKey === "prizms" && prefixKey.startsWith("prizms")) return true;
+  if (nameKey === "commons") return true;
+  if (nameKey === "white hot rookies" || nameKey === "white hot stars") return true;
+  if (
+    nameKey === "rookie autographs" ||
+    nameKey === "rookie jersey autographs" ||
+    nameKey === "select stars jersey autographs"
+  ) {
+    return true;
+  }
+  if (/^production line\s-/i.test(trimmed)) {
+    if (new Set(["scoring", "assists", "rebounds"]).has(prefixKey)) return true;
+  }
+
+  return false;
+}
+
 /** Merge cardSetName ending with one parallel and a fragment parallel (e.g. Fast Break + Pink). */
 export function mergeFragmentedParallelSplit(
   split: CardSetValueSplit,
@@ -340,6 +383,7 @@ export function mergeFragmentedParallelSplit(
       continue;
     }
     if (nameKey !== prefixKey && !nameKey.endsWith(` ${prefixKey}`)) continue;
+    if (isParallelPrefixEmbeddedInCardSetName(cardSetName, prefix)) continue;
 
     const compound = `${prefix} ${parallel}`.trim();
     const nextName =
@@ -573,6 +617,32 @@ function resolveCompoundParallel(
   return parallelByKey.get(normalizeKey(compound)) ?? compound;
 }
 
+/** Insert names where a trailing color/stat token is part of the set name, not a parallel suffix. */
+function shouldPeelParallelSuffixFromCardSetName(
+  cardSetName: string,
+  rowParallel: string | undefined
+): boolean {
+  const trimmed = cardSetName.trim();
+  const nameKey = normalizeKey(trimmed);
+  if (!trimmed) return false;
+
+  if (nameKey === "elite gold") return false;
+  if (nameKey === "prizms" || nameKey === "commons") return false;
+  if (
+    nameKey === "white hot rookies" ||
+    nameKey === "white hot stars" ||
+    nameKey === "rookie autographs" ||
+    nameKey === "rookie jersey autographs" ||
+    nameKey === "select stars jersey autographs"
+  ) {
+    return false;
+  }
+  if (/^production line\s-/i.test(trimmed)) return false;
+  if (rowParallel?.trim()) return false;
+
+  return true;
+}
+
 function reconcileRowEndingParallelFragment(
   row: Dm2ExtractedRow,
   parallelByKey: Map<string, string>,
@@ -604,9 +674,16 @@ function reconcileRowEndingParallelFragment(
     };
   }
 
+  if (!shouldPeelParallelSuffixFromCardSetName(cardSetName, row.parallel)) {
+    return row;
+  }
+
   for (const parallelName of sortedParallels) {
     const parallelKey = normalizeKey(parallelName);
     if (nameKey !== parallelKey && !nameKey.endsWith(` ${parallelKey}`)) {
+      continue;
+    }
+    if (isParallelPrefixEmbeddedInCardSetName(cardSetName, parallelName)) {
       continue;
     }
 
@@ -728,12 +805,7 @@ export function reconcileExtractedRowsWithCatalogParallels(
     const setKey = normalizeKey(row.cardSetName);
     if (setNameKeys.has(setKey)) {
       return reconcileCardSetNameExclusiveOnExtractedRow(
-        reconcileRowEndingParallelFragment(
-          row,
-          parallelByKey,
-          sortedParallels,
-          protectedCardSetNameKeys
-        ),
+        row,
         protectedCardSetNameKeys
       );
     }

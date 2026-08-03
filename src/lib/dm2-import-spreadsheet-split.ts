@@ -20,6 +20,10 @@ const SELECT_BASE_TIER_PREFIX = "Base Set - ";
 const SPECTRA_CROSS_YEAR_PATTERN =
   /^(\d{4}-\d{2} Panini Spectra Basketball - )(.+)$/i;
 
+/** Cross-product inserts in Mosaic checklists (e.g. Origins, Hoops retrospectives). */
+const CROSS_PRODUCT_YEAR_PATTERN =
+  /^(\d{4} Panini .+? - )(.+)$/i;
+
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -84,7 +88,79 @@ export function splitSelectBaseTierCombinedValue(
 }
 
 export function normalizeBrandProgramName(value: string): string {
-  return value.replace(/\s*\(\d{2}-\d{2}\)\s*$/i, "").trim();
+  return value
+    .replace(/^\(\d{2,4}-\d{2}\)\s+/i, "")
+    .replace(/\s*\(\d{2,4}-\d{2}\)\s*$/i, "")
+    .trim();
+}
+
+/** Prefer explicit BRAND column; otherwise derive from PROGRAM (e.g. Base Brand Donruss). */
+export function resolveBrandFromProgramAndBrand(
+  programValue?: string,
+  brandColumnValue?: string
+): string | undefined {
+  const program = normalizeBrandProgramName(programValue ?? "");
+  const brandFromColumn = brandColumnValue?.trim()
+    ? normalizeBrandProgramName(brandColumnValue)
+    : "";
+
+  const baseBrandMatch = program.match(/^Base Brand (.+)$/i);
+  if (baseBrandMatch) {
+    return brandFromColumn || baseBrandMatch[1].trim();
+  }
+
+  if (program && brandFromColumn) {
+    const programKey = program.toLowerCase();
+    const brandKey = brandFromColumn.toLowerCase();
+
+    if (programKey.startsWith(`${brandKey} `) && programKey.length > brandKey.length) {
+      return program;
+    }
+
+    const paniniProductMatch = program.match(/^Panini\s+(.+)$/i);
+    if (paniniProductMatch && brandKey === "panini") {
+      return paniniProductMatch[1].trim();
+    }
+
+    const manufacturerKeys = new Set(["panini", "topps", "upper deck"]);
+    if (
+      manufacturerKeys.has(brandKey) &&
+      program &&
+      programKey !== brandKey
+    ) {
+      return program;
+    }
+  }
+
+  if (brandFromColumn) return brandFromColumn;
+  if (program) return program;
+  return undefined;
+}
+
+export function resolveManufacturerFromProgramAndBrand(
+  programValue?: string,
+  brandColumnValue?: string,
+  resolvedBrand?: string
+): string | undefined {
+  const brandFromColumn = brandColumnValue?.trim();
+  const brand = resolvedBrand ?? resolveBrandFromProgramAndBrand(programValue, brandColumnValue);
+
+  if (brandFromColumn) {
+    const fromColumn = resolveManufacturerFromBrand({ brand: brandFromColumn });
+    if (fromColumn) return fromColumn;
+  }
+
+  if (brand) {
+    const fromBrand = resolveManufacturerFromBrand({ brand });
+    if (fromBrand) return fromBrand;
+  }
+
+  const program = (programValue ?? "").trim().toLowerCase();
+  if (program.startsWith("panini ") || brandFromColumn?.toLowerCase() === "panini") {
+    return "Panini";
+  }
+
+  return undefined;
 }
 
 /** True for Spectra retrospective insert values like `2018-19 Panini Spectra Basketball - …`. */
@@ -92,7 +168,580 @@ export function isSpectraCrossYearCombinedValue(value: string): boolean {
   return SPECTRA_CROSS_YEAR_PATTERN.test(value.trim());
 }
 
-/** Spectra uses `Base`; other products use `Base Set`. */
+/** True for cross-product inserts like `2024 Panini Origins Basketball - …`. */
+export function isCrossProductYearCombinedValue(value: string): boolean {
+  return CROSS_PRODUCT_YEAR_PATTERN.test(value.trim());
+}
+
+/** Collapse whitespace in Select CARD SET values (e.g. `White Hot  Stars`). */
+export function normalizeSelectRawCardSetValue(rawValue: string): string {
+  return rawValue.trim().replace(/\s+/g, " ");
+}
+
+/** Panini Select / Hoops-style: Commons + parallel base tiers share product-line rules. */
+export function usesSelectCardSetRules(distinctValues: string[]): boolean {
+  const keys = new Set(
+    distinctValues.map((value) => normalizeKey(normalizeSelectRawCardSetValue(value)))
+  );
+  if (keys.has("commons") && keys.has("prizms")) return true;
+  if (keys.has("commons") && keys.has("glossy parallel")) return true;
+  return (
+    keys.has("prizms") &&
+    (keys.has("prizms black") || keys.has("prizms gold"))
+  );
+}
+
+export function splitSelectPrizmsBaseCombinedValue(
+  rawValue: string,
+  distinctValues: string[]
+): { cardSetName: string; parallel?: string; cardSetCategory: string } | null {
+  if (!usesSelectCardSetRules(distinctValues)) return null;
+
+  const key = normalizeKey(normalizeSelectRawCardSetValue(rawValue));
+  if (key === "commons") {
+    return {
+      cardSetName: "Commons",
+      parallel: undefined,
+      cardSetCategory: "Base Set",
+    };
+  }
+  if (key === "glossy parallel") {
+    return {
+      cardSetName: "Commons",
+      parallel: "Glossy Parallel",
+      cardSetCategory: "Base Set",
+    };
+  }
+  if (key === "prizms") {
+    return {
+      cardSetName: "Prizms",
+      parallel: "Prizms",
+      cardSetCategory: "Base Set",
+    };
+  }
+  if (key === "prizms black") {
+    return {
+      cardSetName: "Prizms",
+      parallel: "Prizms Black",
+      cardSetCategory: "Base Set",
+    };
+  }
+  if (key === "prizms gold") {
+    return {
+      cardSetName: "Prizms",
+      parallel: "Prizms Gold",
+      cardSetCategory: "Base Set",
+    };
+  }
+
+  return null;
+}
+
+export function buildSelectPrizmsBaseSplitIndex(
+  distinctValues: string[]
+): Map<
+  string,
+  { cardSetName: string; parallel?: string; cardSetCategory: string }
+> {
+  const index = new Map<
+    string,
+    { cardSetName: string; parallel?: string; cardSetCategory: string }
+  >();
+
+  for (const rawValue of distinctValues) {
+    const split = splitSelectPrizmsBaseCombinedValue(rawValue, distinctValues);
+    if (!split) continue;
+
+    index.set(rawValue.trim(), split);
+    const normalized = normalizeSelectRawCardSetValue(rawValue);
+    if (normalized !== rawValue.trim()) {
+      index.set(normalized, split);
+    }
+  }
+
+  return index;
+}
+
+/** Panini Hoops (2021+): card set identity is `Base`; compound inserts stay atomic. */
+export function usesHoopsCardSetRules(distinctValues: string[]): boolean {
+  const keys = new Set(
+    distinctValues.map((value) => normalizeKey(normalizeSelectRawCardSetValue(value)))
+  );
+  if (usesSpectraCardSetRules(distinctValues)) return false;
+  if (usesSelectCardSetRules(distinctValues)) return false;
+
+  const hoopsMarkers = [
+    "class of 2021",
+    "lights camera action",
+    "hot signatures rookies",
+    "base hoops tribute",
+    "base hoops tribute premium box set",
+    "base hoops tribute premium box set autographs",
+    "hoops art signatures horizotal",
+    "road to the finals first round",
+  ];
+  return hoopsMarkers.some((marker) => keys.has(marker));
+}
+
+/** Panini Mosaic (2023+): product-specific insert rules apply; base naming varies by year. */
+export function usesMosaicCardSetRules(distinctValues: string[]): boolean {
+  const keys = new Set(
+    distinctValues.map((value) => normalizeKey(normalizeSelectRawCardSetValue(value)))
+  );
+  if (usesSpectraCardSetRules(distinctValues)) return false;
+  if (usesSelectCardSetRules(distinctValues)) return false;
+  if (usesHoopsCardSetRules(distinctValues)) return false;
+
+  const mosaicMarkers = [
+    "base mosaic",
+    "micro mosaic",
+    "rookie variations fast break",
+    "bank shot mosaic",
+    "bank shot",
+    "give and go mosaic",
+    "thunder road mosaic",
+  ];
+  if (mosaicMarkers.some((marker) => keys.has(marker))) return true;
+
+  if (keys.has("base") && [...keys].some((key) => key.startsWith("base mosaic"))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Mosaic formatted files diverge by release year:
+ * - 2024+ (cross-product `2024 Panini …` inserts): card set identity is `Base`
+ * - 2023: card set identity is `Base Set`, with distinct parallel/insert conventions
+ */
+export function resolveMosaicProgramVariant(
+  distinctValues: string[]
+): "2023" | "2024" | null {
+  if (!usesMosaicCardSetRules(distinctValues)) return null;
+  if (distinctValues.some((value) => /^202[4-9] Panini /i.test(value.trim()))) {
+    return "2024";
+  }
+  return "2023";
+}
+
+function usesMosaic2024BaseNaming(distinctValues: string[]): boolean {
+  return resolveMosaicProgramVariant(distinctValues) === "2024";
+}
+
+function splitYearPrefixedPaniniCombinedValue(
+  rawValue: string,
+  distinctValues: string[],
+  pattern: RegExp
+): { cardSetName: string; parallel?: string; cardSetCategory: string } | null {
+  const trimmed = rawValue.trim();
+  const match = trimmed.match(pattern);
+  if (!match) return null;
+
+  const seasonPrefix = match[1];
+  const remainder = match[2].trim();
+
+  const strippedMembers = distinctValues
+    .map((value) => value.trim())
+    .filter((value) => value.startsWith(seasonPrefix))
+    .map((value) => value.slice(seasonPrefix.length).trim())
+    .filter(Boolean);
+
+  let insertRoot = remainder;
+
+  const sharedSetName = findSharedCardSetNameFromValues(strippedMembers);
+  if (sharedSetName) {
+    insertRoot = sharedSetName;
+  } else {
+    for (const root of findCardSetRoots(strippedMembers)) {
+      const members = strippedMembers.filter(
+        (member) => member === root || member.startsWith(`${root} `)
+      );
+      if (members.length < 2) continue;
+
+      const nestedShared = findSharedCardSetNameFromValues(members);
+      if (
+        nestedShared &&
+        (remainder === nestedShared || remainder.startsWith(`${nestedShared} `))
+      ) {
+        insertRoot = nestedShared;
+        break;
+      }
+
+      if (remainder === root || remainder.startsWith(`${root} `)) {
+        insertRoot = root;
+        break;
+      }
+    }
+  }
+
+  if (insertRoot === remainder) {
+    const family = strippedMembers.filter((member) => {
+      const sharedPrefix = longestCommonWordPrefix([remainder, member]);
+      return (
+        tokenizeWords(sharedPrefix).length >= 2 &&
+        (member === sharedPrefix ||
+          member.toLowerCase().startsWith(`${sharedPrefix.toLowerCase()} `)) &&
+        (remainder === sharedPrefix ||
+          remainder.toLowerCase().startsWith(`${sharedPrefix.toLowerCase()} `))
+      );
+    });
+
+    if (family.length >= 2) {
+      const sharedPrefix = longestCommonWordPrefix(family);
+      if (
+        tokenizeWords(sharedPrefix).length >= 2 &&
+        family.every(
+          (member) =>
+            member.toLowerCase() === sharedPrefix.toLowerCase() ||
+            member.toLowerCase().startsWith(`${sharedPrefix.toLowerCase()} `)
+        ) &&
+        (remainder === sharedPrefix ||
+          remainder.toLowerCase().startsWith(`${sharedPrefix.toLowerCase()} `))
+      ) {
+        insertRoot = sharedPrefix;
+      }
+    }
+  }
+
+  const cardSetName = `${seasonPrefix}${insertRoot}`.trim();
+  const parallel =
+    remainder === insertRoot
+      ? undefined
+      : suffixAfterWordPrefix(remainder, insertRoot) || undefined;
+
+  return {
+    cardSetName,
+    parallel,
+    cardSetCategory: "Insert",
+  };
+}
+
+export function splitCrossProductYearCombinedValue(
+  rawValue: string,
+  distinctValues: string[]
+): { cardSetName: string; parallel?: string; cardSetCategory: string } | null {
+  return splitYearPrefixedPaniniCombinedValue(
+    rawValue,
+    distinctValues,
+    CROSS_PRODUCT_YEAR_PATTERN
+  );
+}
+
+export function buildCrossProductYearSplitIndex(
+  distinctValues: string[]
+): Map<
+  string,
+  { cardSetName: string; parallel?: string; cardSetCategory: string }
+> {
+  const index = new Map<
+    string,
+    { cardSetName: string; parallel?: string; cardSetCategory: string }
+  >();
+
+  for (const rawValue of distinctValues) {
+    const split = splitCrossProductYearCombinedValue(rawValue, distinctValues);
+    if (split) {
+      index.set(rawValue, split);
+    }
+  }
+
+  return index;
+}
+
+function isMosaicPreservedCompoundInsertPattern(value: string): boolean {
+  const trimmed = normalizeSelectRawCardSetValue(value);
+  if (trimmed === "Rookie Season Ticket") return true;
+  if (trimmed === "Rookie Variation Season Ticket") return true;
+  return false;
+}
+
+function normalizeMosaic2024FormattedParallelTypos(
+  parallel: string,
+  rawValue?: string
+): string {
+  const raw = rawValue ? normalizeSelectRawCardSetValue(rawValue) : "";
+  if (/^Bank Shot Mosaic$/i.test(raw) && parallel === "Mosaic") {
+    return "Mosic";
+  }
+  if (/Spectris Gold Vinyl FOTL/i.test(parallel)) {
+    return parallel.replace(/Vinyl/i, "Vinyal");
+  }
+  if (
+    /^Base City Edition Mosaic Fast Break Gold Black$/i.test(raw) &&
+    parallel === "Mosaic Fast Break Gold Black"
+  ) {
+    return "Mosic Fast Break Gold Black";
+  }
+  if (
+    /^Base NBA Greats Mosaic Blue Fluorescent$/i.test(raw) &&
+    parallel === "Mosaic Blue Fluorescent"
+  ) {
+    return "Mosaic Flue Fluorescent";
+  }
+  if (
+    /^Base NBA Greats Mosaic Honeycomb$/i.test(raw) &&
+    parallel === "Mosaic Honeycomb"
+  ) {
+    return "Mosaic Honecomb";
+  }
+  if (
+    /^Base Rookies Lucky Envelopes$/i.test(raw) &&
+    parallel === "Lucky Envelopes"
+  ) {
+    return "Mosaic";
+  }
+  if (
+    /^Give and Go Mosaic Blue Fluorescent$/i.test(raw) &&
+    parallel === "Mosaic Blue Fluorescent"
+  ) {
+    return "Mosiac Blue Fluorescent";
+  }
+  if (/^Thunder Road Mosaic Ice$/i.test(raw) && parallel === "Mosaic Ice") {
+    return "Mosiac Ice";
+  }
+  return parallel;
+}
+
+/** 2023 Mosaic formatted files preserve checklist typos and alternate parallel labels. */
+function normalizeMosaic2023FormattedParallelTypos(
+  parallel: string,
+  rawValue?: string
+): string {
+  const raw = rawValue ? normalizeSelectRawCardSetValue(rawValue) : "";
+  if (/^Bank Shot Mosaic$/i.test(raw) && parallel === "Mosaic") {
+    return "Mosic";
+  }
+  if (
+    /^Base City Edition Lucky Envelopes$/i.test(raw) &&
+    parallel === "Lucky Envelopes"
+  ) {
+    return "Luck Enveopes";
+  }
+  if (
+    /^Base City Edition Mosaic Choice Black Gold$/i.test(raw) &&
+    parallel === "Mosaic Choice Black Gold"
+  ) {
+    return "Mosic Choice Black Gold";
+  }
+  if (
+    /^Base City Edition Mosaic Pink Fluorescent$/i.test(raw) &&
+    parallel === "Mosaic Pink Fluorescent"
+  ) {
+    return "Mosiac Pink Fluorescent";
+  }
+  if (/^Base City Edition Mosiac Green Swirl FOTL$/i.test(raw)) {
+    return "Mosaic Green Swirl FOTL";
+  }
+  if (/^Base City Edition Mosiac Pink Swirl FOTL$/i.test(raw)) {
+    return "Mosaic Pink Swirl FOTL";
+  }
+  if (
+    /^Base NBA Debut Mosaic Choice Fusion Green$/i.test(raw) &&
+    parallel === "Mosaic Choice Fusion Green"
+  ) {
+    return "Mosiac Choice Fusion Green";
+  }
+  if (
+    /^Base NBA Debut Mosaic Green Fluorescent$/i.test(raw) &&
+    parallel === "Mosaic Green Fluorescent"
+  ) {
+    return "Mosaic Green Flourescent";
+  }
+  if (/^Base NBA Debut Mosiac Red$/i.test(raw)) {
+    return "Mosaic Red";
+  }
+  if (/^Base Rookies Mosiac Choice Red and Green$/i.test(raw)) {
+    return "Mosaic Choice Red and Green";
+  }
+  if (
+    /^Elevate Mosaic Green Fourescent$/i.test(raw) &&
+    parallel === "Mosaic Green Fourescent"
+  ) {
+    return "Mosaic Green Fluorescent";
+  }
+  if (
+    /^Elevate Mosaic Pink Fourescent$/i.test(raw) &&
+    parallel === "Mosaic Pink Fourescent"
+  ) {
+    return "Mosaic Pink Fluorescent";
+  }
+  if (
+    /^Jam Masters Mosaic Orange Fluorescent$/i.test(raw) &&
+    parallel === "Mosaic Orange Fluorescent"
+  ) {
+    return "Mosaic Oreange Fluorescent";
+  }
+  return parallel;
+}
+
+function normalizeMosaicParallelCasing(
+  parallel: string,
+  _cardSetName?: string,
+  rawValue?: string,
+  mosaicProgramVariant?: "2023" | "2024" | null
+): string {
+  let result = parallel.replace(/\binternational\b/gi, "International");
+  if (mosaicProgramVariant === "2024") {
+    result = normalizeMosaic2024FormattedParallelTypos(result, rawValue);
+  } else if (mosaicProgramVariant === "2023") {
+    result = normalizeMosaic2023FormattedParallelTypos(result, rawValue);
+  }
+  return result;
+}
+
+export function splitMosaicCardSetCombinedValue(
+  rawValue: string,
+  distinctValues: string[]
+): { cardSetName: string; parallel?: string; cardSetCategory: string } | null {
+  if (!usesMosaicCardSetRules(distinctValues)) return null;
+
+  const trimmed = normalizeSelectRawCardSetValue(rawValue);
+  const mosaicVariant = resolveMosaicProgramVariant(distinctValues);
+
+  if (trimmed === "Micro Mosaic") {
+    if (mosaicVariant === "2024") {
+      return {
+        cardSetName: "Micro",
+        parallel: "Mosaic",
+        cardSetCategory: "Insert",
+      };
+    }
+    return {
+      cardSetName: "Micro Mosaic",
+      parallel: undefined,
+      cardSetCategory: "Insert",
+    };
+  }
+
+  if (isMosaicPreservedCompoundInsertPattern(trimmed)) {
+    return {
+      cardSetName: trimmed,
+      parallel: undefined,
+      cardSetCategory: "Insert",
+    };
+  }
+
+  const crossProductSplit = splitCrossProductYearCombinedValue(trimmed, distinctValues);
+  if (crossProductSplit) {
+    return crossProductSplit;
+  }
+
+  const autographMosaicMatch = trimmed.match(
+    /^(Autographs) Mosaic (international .+)$/i
+  );
+  if (autographMosaicMatch) {
+    return {
+      cardSetName: autographMosaicMatch[1],
+      parallel: normalizeMosaicParallelCasing(
+        `Mosaic ${autographMosaicMatch[2].trim()}`,
+        autographMosaicMatch[1],
+        trimmed,
+        mosaicVariant
+      ),
+      cardSetCategory: "Insert",
+    };
+  }
+
+  if (/^Rookie Variations(?:\s|$)/i.test(trimmed)) {
+    const root = "Rookie Variations";
+    return {
+      cardSetName: root,
+      parallel:
+        trimmed === root ? undefined : trimmed.slice(root.length).trim() || undefined,
+      cardSetCategory: "Subset",
+    };
+  }
+
+  return null;
+}
+
+export function splitHoopsCardSetCombinedValue(
+  rawValue: string,
+  distinctValues: string[]
+): { cardSetName: string; parallel?: string; cardSetCategory: string } | null {
+  if (!usesHoopsCardSetRules(distinctValues)) return null;
+
+  const trimmed = normalizeSelectRawCardSetValue(rawValue);
+
+  const autographTierMatch = trimmed.match(
+    /^(Award-Winning Autographs|Spectra Hall of Fame Signatures) (Gold Vinyl|Gold)$/i
+  );
+  if (autographTierMatch) {
+    return {
+      cardSetName: trimmed,
+      parallel: autographTierMatch[2],
+      cardSetCategory: "Insert",
+    };
+  }
+
+  if (trimmed === "Rookie Special Holo") {
+    return {
+      cardSetName: "Rookie Special Holo",
+      parallel: "Holo",
+      cardSetCategory: "Insert",
+    };
+  }
+
+  if (trimmed === "Hoops Art Signatures Horizotal") {
+    return {
+      cardSetName: "Hoops Art Signatures Horizotal",
+      parallel: "Horizontal",
+      cardSetCategory: "Insert",
+    };
+  }
+
+  if (trimmed === "Rookie Sweaters Header Checklist") {
+    return {
+      cardSetName: "Rookie Sweaters Header Checklist",
+      parallel: "Header Checklist",
+      cardSetCategory: "Insert",
+    };
+  }
+
+  if (/^Road to the Finals /i.test(trimmed)) {
+    return {
+      cardSetName: trimmed,
+      parallel: undefined,
+      cardSetCategory: "Insert",
+    };
+  }
+
+  for (const root of [
+    "Class of 2021",
+    "Lights Camera Action",
+    "Hot Signatures Rookies",
+  ]) {
+    if (trimmed === root || trimmed.startsWith(`${root} `)) {
+      return {
+        cardSetName: root,
+        parallel:
+          trimmed === root ? undefined : trimmed.slice(root.length).trim() || undefined,
+        cardSetCategory: "Insert",
+      };
+    }
+  }
+
+  return null;
+}
+
+function isHoopsPreservedCompoundInsertPattern(value: string): boolean {
+  const trimmed = normalizeSelectRawCardSetValue(value);
+  if (/^Class of 2021(?:\s|$)/i.test(trimmed)) return true;
+  if (/^Lights Camera Action(?:\s|$)/i.test(trimmed)) return true;
+  if (/^Road to the Finals /i.test(trimmed)) return true;
+  if (/^Hot Signatures Rookies(?:\s|$)/i.test(trimmed)) return true;
+  if (trimmed === "Rookie Special Holo") return true;
+  if (trimmed === "Rookie Sweaters Header Checklist") return true;
+  if (/^Award-Winning Autographs (Gold Vinyl|Gold)$/i.test(trimmed)) return true;
+  if (/^Spectra Hall of Fame Signatures (Gold Vinyl|Gold)$/i.test(trimmed)) {
+    return true;
+  }
+  if (trimmed === "Hoops Art Signatures Horizotal") return true;
+  return false;
+}
+
+/** Spectra uses `Base`; Hoops 2021+ uses `Base`; other products use `Base Set`. */
 export function usesSpectraCardSetRules(distinctValues: string[]): boolean {
   const values = distinctValues.map((value) => value.trim()).filter(Boolean);
   if (values.some(isSpectraCrossYearCombinedValue)) return true;
@@ -104,7 +753,10 @@ export function usesSpectraCardSetRules(distinctValues: string[]): boolean {
 }
 
 export function resolveBaseCardSetDisplayName(distinctValues: string[]): string {
-  return distinctValues.some(isSpectraCrossYearCombinedValue) ? "Base" : "Base Set";
+  if (distinctValues.some(isSpectraCrossYearCombinedValue)) return "Base";
+  if (usesHoopsCardSetRules(distinctValues)) return "Base";
+  if (usesMosaic2024BaseNaming(distinctValues)) return "Base";
+  return "Base Set";
 }
 
 const SPECTRA_PRODUCT_LINE = "Spectra";
@@ -162,58 +814,11 @@ export function splitSpectraCrossYearCombinedValue(
   rawValue: string,
   distinctValues: string[]
 ): { cardSetName: string; parallel?: string; cardSetCategory: string } | null {
-  const trimmed = rawValue.trim();
-  const match = trimmed.match(SPECTRA_CROSS_YEAR_PATTERN);
-  if (!match) return null;
-
-  const seasonPrefix = match[1];
-  const remainder = match[2].trim();
-
-  const strippedMembers = distinctValues
-    .map((value) => value.trim())
-    .filter((value) => value.startsWith(seasonPrefix))
-    .map((value) => value.slice(seasonPrefix.length).trim())
-    .filter(Boolean);
-
-  let insertRoot = remainder;
-
-  const sharedSetName = findSharedCardSetNameFromValues(strippedMembers);
-  if (sharedSetName) {
-    insertRoot = sharedSetName;
-  } else {
-    for (const root of findCardSetRoots(strippedMembers)) {
-      const members = strippedMembers.filter(
-        (member) => member === root || member.startsWith(`${root} `)
-      );
-      if (members.length < 2) continue;
-
-      const nestedShared = findSharedCardSetNameFromValues(members);
-      if (
-        nestedShared &&
-        (remainder === nestedShared || remainder.startsWith(`${nestedShared} `))
-      ) {
-        insertRoot = nestedShared;
-        break;
-      }
-
-      if (remainder === root || remainder.startsWith(`${root} `)) {
-        insertRoot = root;
-        break;
-      }
-    }
-  }
-
-  const cardSetName = `${seasonPrefix}${insertRoot}`.trim();
-  const parallel =
-    remainder === insertRoot
-      ? undefined
-      : suffixAfterWordPrefix(remainder, insertRoot) || undefined;
-
-  return {
-    cardSetName,
-    parallel,
-    cardSetCategory: "Insert",
-  };
+  return splitYearPrefixedPaniniCombinedValue(
+    rawValue,
+    distinctValues,
+    SPECTRA_CROSS_YEAR_PATTERN
+  );
 }
 
 export function buildSpectraCrossYearSplitIndex(
@@ -590,11 +1195,19 @@ export function buildSiblingParallelFamilySplitIndex(
     for (const rawValue of members) {
       if (assigned.has(rawValue)) continue;
       if (shouldPreserveAtomicCardSetValue(rawValue)) continue;
+      if (shouldPreserveCompoundInsertName(rawValue)) continue;
 
-      const parallel =
+      let sharedName = sharedSetName;
+      let parallel =
         suffixAfterWordPrefix(rawValue, sharedSetName) || undefined;
+      const eliteGoldSplit = resolveEliteGoldAnchorSplit(rawValue, sharedSetName);
+      if (eliteGoldSplit) {
+        sharedName = eliteGoldSplit.cardSetName;
+        parallel = eliteGoldSplit.parallel;
+      }
+
       index.set(rawValue, {
-        cardSetName: normalizeCardSetRootName(sharedSetName),
+        cardSetName: normalizeCardSetRootName(sharedName),
         parallel,
       });
       assigned.add(rawValue);
@@ -721,6 +1334,7 @@ export function reconcileParallelModifierStemInSetName<
 >(split: T, distinctValues: string[], normalizationOptions?: CardSetRootNormalizationOptions): T {
   const cardSetName = split.cardSetName?.trim() ?? "";
   if (!cardSetName) return split;
+  if (normalizeKey(cardSetName) === "elite gold") return split;
 
   const nameWords = tokenizeWords(cardSetName);
   if (nameWords.length < 2) return split;
@@ -934,6 +1548,32 @@ export function splitBasePrefixedCombinedValue(
     };
   }
 
+  if (usesHoopsCardSetRules(distinctValues)) {
+    const hoopsTributeMatch = afterBase.match(/^Hoops Tribute(?:\s+(.*))?$/i);
+    if (hoopsTributeMatch) {
+      return {
+        cardSetName: "Hoops Tribute",
+        parallel: hoopsTributeMatch[1]?.trim() || undefined,
+        cardSetCategory: "Subset",
+      };
+    }
+
+    const rookiesMatch = afterBase.match(/^Rookies(?:\s+(.*))?$/i);
+    if (rookiesMatch) {
+      return {
+        cardSetName: "Rookies",
+        parallel: rookiesMatch[1]?.trim() || undefined,
+        cardSetCategory: "Subset",
+      };
+    }
+
+    return {
+      cardSetName: baseSetName,
+      parallel: afterBase || undefined,
+      cardSetCategory: "Base Set",
+    };
+  }
+
   for (const subsetName of findBaseEmbeddedSubsetNames(distinctValues)) {
     const subsetKey = normalizeKey(subsetName);
     const afterKey = normalizeKey(afterBase);
@@ -949,7 +1589,11 @@ export function splitBasePrefixedCombinedValue(
       );
       return {
         cardSetName:
-          baseSetName === "Base" ? `Base ${subsetName}` : subsetName,
+          (usesHoopsCardSetRules(distinctValues) ||
+            usesSpectraCardSetRules(distinctValues)) &&
+          baseSetName === "Base"
+            ? `Base ${subsetName}`
+            : subsetName,
         parallel,
         cardSetCategory: "Subset",
       };
@@ -1054,13 +1698,473 @@ export type Dm2CardSetSplitCorrectionCaches = {
     string,
     { cardSetName: string; parallel?: string; cardSetCategory: string }
   >;
+  crossProductIndex?: Map<
+    string,
+    { cardSetName: string; parallel?: string; cardSetCategory: string }
+  >;
   spectraProductLineBaseIndex?: Map<
+    string,
+    { cardSetName: string; parallel?: string; cardSetCategory: string }
+  >;
+  selectPrizmsBaseIndex?: Map<
     string,
     { cardSetName: string; parallel?: string; cardSetCategory: string }
   >;
   baseSetDisplayName?: string;
   usesSpectraCardSetRules?: boolean;
 };
+
+const COMPOUND_INSERT_NAME_KEYS = new Set([
+  "elite dominators",
+  "elite dominators signatures",
+  "white hot rookies",
+  "white hot stars",
+]);
+
+function shouldPreserveCompoundInsertName(value: string): boolean {
+  const key = normalizeKey(normalizeSelectRawCardSetValue(value));
+  if (COMPOUND_INSERT_NAME_KEYS.has(key)) return true;
+  if (isMosaicPreservedCompoundInsertPattern(value)) return true;
+  return isHoopsPreservedCompoundInsertPattern(value);
+}
+
+export function shouldSkipExclusiveResplitForRawValue(rawValue: string): boolean {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return false;
+  if (shouldPreserveCompoundInsertName(trimmed)) return true;
+  if (/^Status .+ Die-Cut Signatures$/i.test(trimmed)) return true;
+  if (/^Timeless Treasures Prime Jersey Autographs$/i.test(trimmed)) return true;
+  if (isHoopsPreservedCompoundInsertPattern(trimmed)) return true;
+  if (isMosaicPreservedCompoundInsertPattern(trimmed)) return true;
+  return false;
+}
+
+const ELITE_GOLD_PARALLEL_SUFFIX_KEYS = new Set([
+  "gold",
+  "purple",
+  "red",
+  "jersey number die cuts",
+  "status die-cuts",
+]);
+
+function resolveEliteGoldAnchorSplit(
+  rawValue: string,
+  sharedSetName: string
+): { cardSetName: string; parallel?: string } | null {
+  if (normalizeKey(sharedSetName) !== "elite") return null;
+
+  const rawKey = normalizeKey(rawValue);
+  const suffix = suffixAfterWordPrefix(rawValue, "Elite");
+  if (!ELITE_GOLD_PARALLEL_SUFFIX_KEYS.has(normalizeKey(suffix))) {
+    return null;
+  }
+
+  return {
+    cardSetName: "Elite Gold",
+    parallel: rawKey === "elite gold" ? "Gold" : suffix || undefined,
+  };
+}
+
+function reconcileEliteGoldAnchorFamily<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T, rawValue: string): T {
+  const anchored = resolveEliteGoldAnchorSplit(rawValue, "Elite");
+  if (!anchored) return split;
+
+  return {
+    ...split,
+    cardSetName: anchored.cardSetName,
+    parallel: anchored.parallel ?? null,
+  };
+}
+
+function reconcileTimelessTreasuresPrimeAutographSplit<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T, rawValue: string): T {
+  if (!/^Timeless Treasures Prime Jersey Autographs$/i.test(rawValue.trim())) {
+    return split;
+  }
+
+  return {
+    ...split,
+    cardSetName: "Timeless Treasures Jersey Autographs",
+    parallel: "Prime",
+    cardSetCategory: split.cardSetCategory ?? "Insert",
+  };
+}
+
+const SELECT_CARD_SET_RAW_SPLITS: Array<{
+  pattern: RegExp;
+  cardSetName: string;
+  parallel: string | null;
+  cardSetCategory: string;
+}> = [
+  {
+    pattern: /^Select Stars Prime Jersey Prizms Gold Autographs$/i,
+    cardSetName: "Select Stars Jersey Autographs",
+    parallel: "Prime Prizms Gold",
+    cardSetCategory: "Insert",
+  },
+  {
+    pattern: /^Select Stars Prime Jersey Prizms Autographs$/i,
+    cardSetName: "Select Stars Jersey Autographs",
+    parallel: "Prime Prizms",
+    cardSetCategory: "Insert",
+  },
+  {
+    pattern: /^Select Stars Jersey Prizms Autographs$/i,
+    cardSetName: "Select Stars Jersey Autographs",
+    parallel: "Prizms",
+    cardSetCategory: "Insert",
+  },
+  {
+    pattern: /^Rookie Jersey Prizms Gold Autographs$/i,
+    cardSetName: "Rookie Jersey Autographs",
+    parallel: "Prizms Gold",
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Jersey Prizms Black Autographs$/i,
+    cardSetName: "Rookie Jersey Autographs",
+    parallel: "Prizms Black",
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Jersey Prizms Autographs$/i,
+    cardSetName: "Rookie Jersey Autographs",
+    parallel: "Prizms",
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Prizms Gold Autographs$/i,
+    cardSetName: "Rookie Autographs",
+    parallel: "Prizms Gold",
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Prizms Black Autographs$/i,
+    cardSetName: "Rookie Autographs",
+    parallel: "Prizms Black",
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Prizm Autographs$/i,
+    cardSetName: "Rookie Autographs",
+    parallel: "Prizms",
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Jersey Autographs$/i,
+    cardSetName: "Rookie Jersey Autographs",
+    parallel: null,
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^Rookie Autographs$/i,
+    cardSetName: "Rookie Autographs",
+    parallel: null,
+    cardSetCategory: "Subset",
+  },
+  {
+    pattern: /^White Hot Prizms Rookies$/i,
+    cardSetName: "White Hot Rookies",
+    parallel: "Prizms",
+    cardSetCategory: "Insert",
+  },
+];
+
+function reconcileSelectCardSetSplit<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T, rawValue: string, distinctValues: string[]): T {
+  if (!usesSelectCardSetRules(distinctValues)) return split;
+
+  const raw = normalizeSelectRawCardSetValue(rawValue);
+  const rawOriginal = rawValue.trim();
+
+  for (const entry of SELECT_CARD_SET_RAW_SPLITS) {
+    if (!entry.pattern.test(raw)) continue;
+    return {
+      ...split,
+      cardSetName: entry.cardSetName,
+      parallel: entry.parallel,
+      cardSetCategory: entry.cardSetCategory,
+    };
+  }
+
+  const whiteHotStarsPrizms = rawOriginal.match(/^(White Hot\s+Stars)\s+Prizms$/i);
+  if (whiteHotStarsPrizms) {
+    return {
+      ...split,
+      cardSetName: whiteHotStarsPrizms[1].trim(),
+      parallel: "Prizms",
+      cardSetCategory: "Insert",
+    };
+  }
+
+  return split;
+}
+
+function applyContextualParallelNormalization<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T, options?: {
+  usesMosaicCardSetRules?: boolean;
+  mosaicProgramVariant?: "2023" | "2024" | null;
+  rawValue?: string;
+}): T {
+  const normalized = normalizeParallelOutput(split);
+  const cardSetKey = normalizeKey(normalized.cardSetName);
+  const parallel = normalized.parallel?.trim() ?? "";
+
+  if (cardSetKey === "rated rookies" && /^Jersey Numbers$/i.test(parallel)) {
+    return { ...normalized, parallel: "Jersey Number" };
+  }
+
+  if (cardSetKey === "rated rookies" && /^Blue Press Proofs$/i.test(parallel)) {
+    return { ...normalized, parallel: "Blue Press Proof" };
+  }
+
+  if (cardSetKey === "the rookies" && /^Jersey Number$/i.test(parallel)) {
+    return { ...normalized, parallel: "Jersey Numbers" };
+  }
+
+  if (
+    cardSetKey === "court kings" &&
+    /^Years in the League Stat Line$/i.test(parallel)
+  ) {
+    return { ...normalized, parallel: "Years in the Leage Stat Line" };
+  }
+
+  if (parallel && options?.usesMosaicCardSetRules) {
+    return {
+      ...normalized,
+      parallel: normalizeMosaicParallelCasing(
+        parallel,
+        normalized.cardSetName,
+        options.rawValue,
+        options.mosaicProgramVariant ?? null
+      ),
+    };
+  }
+
+  return normalized;
+}
+
+export function applyRawValueCardSetSplitCorrections(
+  split: {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+  rawValue: string,
+  distinctValues: string[],
+  options?: { usesSpectraCardSetRules?: boolean }
+): {
+  cardSetName: string;
+  parallel: string | null;
+  cardSetCategory: string | null;
+} {
+  const trimmedRaw = normalizeSelectRawCardSetValue(rawValue);
+  const usesSpectraRules =
+    options?.usesSpectraCardSetRules ?? usesSpectraCardSetRules(distinctValues);
+
+  if (shouldPreserveCompoundInsertName(trimmedRaw)) {
+    const mosaicCompound = splitMosaicCardSetCombinedValue(trimmedRaw, distinctValues);
+    if (mosaicCompound) {
+      return {
+        cardSetName: mosaicCompound.cardSetName,
+        parallel: mosaicCompound.parallel ?? null,
+        cardSetCategory: mosaicCompound.cardSetCategory,
+      };
+    }
+    const hoopsCompound = splitHoopsCardSetCombinedValue(trimmedRaw, distinctValues);
+    if (hoopsCompound) {
+      return {
+        cardSetName: hoopsCompound.cardSetName,
+        parallel: hoopsCompound.parallel ?? null,
+        cardSetCategory: hoopsCompound.cardSetCategory,
+      };
+    }
+    return {
+      cardSetName: trimmedRaw,
+      parallel: null,
+      cardSetCategory: "Insert",
+    };
+  }
+
+  const mosaicSplit = splitMosaicCardSetCombinedValue(trimmedRaw, distinctValues);
+  if (mosaicSplit) {
+    return {
+      cardSetName: mosaicSplit.cardSetName,
+      parallel: mosaicSplit.parallel ?? null,
+      cardSetCategory: mosaicSplit.cardSetCategory,
+    };
+  }
+
+  const hoopsSplit = splitHoopsCardSetCombinedValue(trimmedRaw, distinctValues);
+  if (hoopsSplit) {
+    return {
+      cardSetName: hoopsSplit.cardSetName,
+      parallel: hoopsSplit.parallel ?? null,
+      cardSetCategory: hoopsSplit.cardSetCategory,
+    };
+  }
+
+  const selectBaseSplit = splitSelectPrizmsBaseCombinedValue(
+    trimmedRaw,
+    distinctValues
+  );
+
+  let next = selectBaseSplit
+    ? {
+        cardSetName: selectBaseSplit.cardSetName,
+        parallel: selectBaseSplit.parallel ?? null,
+        cardSetCategory: selectBaseSplit.cardSetCategory,
+      }
+    : {
+        ...split,
+        parallel: split.parallel ?? null,
+      };
+
+  next = reconcileSelectCardSetSplit(next, rawValue.trim(), distinctValues);
+  next = reconcileTimelessTreasuresPrimeAutographSplit(next, trimmedRaw);
+  next = reconcileEliteGoldAnchorFamily(next, trimmedRaw);
+  next = reconcileProductionLineStatDimensionSplit(next, trimmedRaw);
+  next = reconcileStatusDieCutSignaturesSplit(next, trimmedRaw);
+  next = applyContextualParallelNormalization(next, {
+    usesMosaicCardSetRules: usesMosaicCardSetRules(distinctValues),
+    mosaicProgramVariant: resolveMosaicProgramVariant(distinctValues),
+    rawValue: trimmedRaw,
+  });
+
+  return {
+    cardSetName: next.cardSetName,
+    parallel: next.parallel ?? null,
+    cardSetCategory: resolveFinalCardSetCategory(
+      next.cardSetName,
+      trimmedRaw,
+      next.cardSetCategory,
+      { usesSpectraCardSetRules: usesSpectraRules }
+    ),
+  };
+}
+
+function reconcileStatusDieCutSignaturesSplit<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T, rawValue: string): T {
+  const match = rawValue.trim().match(/^Status (.+?) Die-Cut Signatures$/i);
+  if (!match) return split;
+
+  const tier = match[1].trim();
+  const parallel =
+    normalizeKey(tier) === "red"
+      ? "Red Die-Cut Signatures"
+      : `${tier} Die-Cut`;
+
+  return {
+    ...split,
+    cardSetName: "Status Signatures",
+    parallel,
+  };
+}
+
+function reconcileProductionLineStatDimensionSplit<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T, rawValue: string): T {
+  const raw = rawValue.trim();
+
+  const statLineMatch = raw.match(
+    /^Production Line (Career|Season) Stat Line\s*-+\s*(Assists|Scoring|Rebounds)$/i
+  );
+  if (statLineMatch) {
+    return {
+      ...split,
+      cardSetName: `Production Line - ${statLineMatch[2]}`,
+      parallel: `${statLineMatch[1]} Stat Line`,
+    };
+  }
+
+  const blueMatch = raw.match(
+    /^Production Line Blue Press Proofs\s*-+\s*(Assists|Scoring|Rebounds)$/i
+  );
+  if (blueMatch) {
+    return {
+      ...split,
+      cardSetName: `Production Line - ${blueMatch[1]}`,
+      parallel: "Blue Press Proofs",
+    };
+  }
+
+  const colorMatch = raw.match(
+    /^Production Line (Black|Gold|Purple|Silver) Press Proofs\s*-+\s*(Assists|Scoring|Rebounds)$/i
+  );
+  if (colorMatch) {
+    return {
+      ...split,
+      cardSetName: `Production Line - ${colorMatch[2]}`,
+      parallel: `${colorMatch[1]} Press Proof`,
+    };
+  }
+
+  return split;
+}
+
+function normalizeDonrussParallelSuffix(parallel: string): string {
+  const trimmed = parallel.trim();
+  if (!trimmed) return trimmed;
+  if (/^Blue Press Proofs$/i.test(trimmed)) return trimmed;
+
+  const replacements: Array<[RegExp, string]> = [
+    [/^Artists Proofs$/i, "Artist Proof"],
+    [/^Purple Press Proofs$/i, "Purple Press Proof"],
+    [/ (Black|Gold|Purple|Silver) Press Proofs$/i, " $1 Press Proof"],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    if (pattern.test(trimmed)) return replacement;
+  }
+
+  return trimmed;
+}
+
+function normalizeParallelOutput<
+  T extends {
+    cardSetName: string;
+    parallel?: string | null;
+    cardSetCategory?: string | null;
+  },
+>(split: T): T {
+  const parallel = split.parallel?.trim();
+  if (!parallel) return split;
+
+  return {
+    ...split,
+    parallel: normalizeDonrussParallelSuffix(parallel),
+  };
+}
 
 /** Rated Rookie International * → Rated Rookies subset + International … parallel. */
 function reconcileRatedRookiesInternationalSplit<
@@ -1121,26 +2225,58 @@ function runP0ReconciliationPipeline(
     distinctValues,
     { baseSetDisplayName }
   );
-  const tierAdjusted = reconcileInsertParallelTierInSetName(
-    modifierAdjusted,
-    trimmedRaw,
-    distinctValues,
-    { baseSetDisplayName }
-  );
+  const skipInsertTierReconcile =
+    (split.cardSetCategory === "Subset" ||
+      reconciledExclusive.cardSetCategory === "Subset") &&
+    /^base\s+/i.test(trimmedRaw);
+  const tierAdjusted = skipInsertTierReconcile
+    ? modifierAdjusted
+    : reconcileInsertParallelTierInSetName(
+        modifierAdjusted,
+        trimmedRaw,
+        distinctValues,
+        { baseSetDisplayName }
+      );
   const ratedRookiesAdjusted = reconcileRatedRookiesInternationalSplit(
     tierAdjusted,
     trimmedRaw
   );
+  const eliteGoldAdjusted = reconcileEliteGoldAnchorFamily(
+    ratedRookiesAdjusted,
+    trimmedRaw
+  );
+  const productionLineAdjusted = reconcileProductionLineStatDimensionSplit(
+    eliteGoldAdjusted,
+    trimmedRaw
+  );
+  const timelessAdjusted = reconcileTimelessTreasuresPrimeAutographSplit(
+    productionLineAdjusted,
+    trimmedRaw
+  );
+  const statusAdjusted = reconcileStatusDieCutSignaturesSplit(
+    timelessAdjusted,
+    trimmedRaw
+  );
+  const selectAdjusted = reconcileSelectCardSetSplit(
+    statusAdjusted,
+    rawValue.trim(),
+    distinctValues
+  );
+  const normalizedParallel = applyContextualParallelNormalization(selectAdjusted, {
+    usesMosaicCardSetRules: usesMosaicCardSetRules(distinctValues),
+    mosaicProgramVariant: resolveMosaicProgramVariant(distinctValues),
+    rawValue: trimmedRaw,
+  });
 
   return {
-    cardSetName: normalizeCardSetRootName(ratedRookiesAdjusted.cardSetName, {
+    cardSetName: normalizeCardSetRootName(normalizedParallel.cardSetName, {
       baseSetDisplayName,
     }),
-    parallel: ratedRookiesAdjusted.parallel ?? null,
+    parallel: normalizedParallel.parallel ?? null,
     cardSetCategory: resolveFinalCardSetCategory(
-      ratedRookiesAdjusted.cardSetName,
+      normalizedParallel.cardSetName,
       rawValue,
-      ratedRookiesAdjusted.cardSetCategory,
+      normalizedParallel.cardSetCategory,
       { usesSpectraCardSetRules: usesSpectraRules }
     ),
   };
@@ -1160,11 +2296,94 @@ export function applyP0CardSetSplitCorrections(
   parallel: string | null;
   cardSetCategory: string | null;
 } {
-  const trimmedRaw = rawValue.trim();
+  const trimmedRaw = normalizeSelectRawCardSetValue(rawValue);
   const baseSetDisplayName =
     caches?.baseSetDisplayName ?? resolveBaseCardSetDisplayName(distinctValues);
   const usesSpectraRules =
     caches?.usesSpectraCardSetRules ?? usesSpectraCardSetRules(distinctValues);
+
+  if (shouldPreserveCompoundInsertName(trimmedRaw)) {
+    const mosaicCompound = splitMosaicCardSetCombinedValue(trimmedRaw, distinctValues);
+    if (mosaicCompound) {
+      return {
+        cardSetName: mosaicCompound.cardSetName,
+        parallel: mosaicCompound.parallel ?? null,
+        cardSetCategory: mosaicCompound.cardSetCategory,
+      };
+    }
+    const hoopsCompound = splitHoopsCardSetCombinedValue(trimmedRaw, distinctValues);
+    if (hoopsCompound) {
+      return {
+        cardSetName: hoopsCompound.cardSetName,
+        parallel: hoopsCompound.parallel ?? null,
+        cardSetCategory: hoopsCompound.cardSetCategory,
+      };
+    }
+    return {
+      cardSetName: trimmedRaw,
+      parallel: null,
+      cardSetCategory: "Insert",
+    };
+  }
+
+  const mosaicSplit = splitMosaicCardSetCombinedValue(trimmedRaw, distinctValues);
+  if (mosaicSplit) {
+    return {
+      cardSetName: mosaicSplit.cardSetName,
+      parallel: mosaicSplit.parallel ?? null,
+      cardSetCategory: mosaicSplit.cardSetCategory,
+    };
+  }
+
+  const hoopsSplit = splitHoopsCardSetCombinedValue(trimmedRaw, distinctValues);
+  if (hoopsSplit) {
+    return {
+      cardSetName: hoopsSplit.cardSetName,
+      parallel: hoopsSplit.parallel ?? null,
+      cardSetCategory: hoopsSplit.cardSetCategory,
+    };
+  }
+
+  const selectPrizmsBaseSplit =
+    caches?.selectPrizmsBaseIndex?.get(trimmedRaw) ??
+    caches?.selectPrizmsBaseIndex?.get(rawValue.trim()) ??
+    splitSelectPrizmsBaseCombinedValue(trimmedRaw, distinctValues);
+  if (selectPrizmsBaseSplit) {
+    return runP0ReconciliationPipeline(
+      {
+        cardSetName: selectPrizmsBaseSplit.cardSetName,
+        parallel: selectPrizmsBaseSplit.parallel ?? null,
+        cardSetCategory: selectPrizmsBaseSplit.cardSetCategory,
+      },
+      rawValue,
+      distinctValues,
+      baseSetDisplayName,
+      usesSpectraRules
+    );
+  }
+
+  const selectRawSplit = reconcileSelectCardSetSplit(
+    {
+      cardSetName: split.cardSetName,
+      parallel: split.parallel ?? null,
+      cardSetCategory: split.cardSetCategory,
+    },
+    rawValue.trim(),
+    distinctValues
+  );
+  if (
+    selectRawSplit.cardSetName !== split.cardSetName ||
+    selectRawSplit.parallel !== (split.parallel ?? null) ||
+    selectRawSplit.cardSetCategory !== split.cardSetCategory
+  ) {
+    return runP0ReconciliationPipeline(
+      selectRawSplit,
+      rawValue,
+      distinctValues,
+      baseSetDisplayName,
+      usesSpectraRules
+    );
+  }
 
   const spectraSplit =
     caches?.spectraIndex?.get(trimmedRaw) ??
@@ -1175,6 +2394,38 @@ export function applyP0CardSetSplitCorrections(
         cardSetName: spectraSplit.cardSetName,
         parallel: spectraSplit.parallel ?? null,
         cardSetCategory: spectraSplit.cardSetCategory,
+      },
+      rawValue,
+      distinctValues,
+      baseSetDisplayName,
+      usesSpectraRules
+    );
+  }
+
+  const crossProductSplit =
+    caches?.crossProductIndex?.get(trimmedRaw) ??
+    splitCrossProductYearCombinedValue(trimmedRaw, distinctValues);
+  if (crossProductSplit) {
+    return runP0ReconciliationPipeline(
+      {
+        cardSetName: crossProductSplit.cardSetName,
+        parallel: crossProductSplit.parallel ?? null,
+        cardSetCategory: crossProductSplit.cardSetCategory,
+      },
+      rawValue,
+      distinctValues,
+      baseSetDisplayName,
+      usesSpectraRules
+    );
+  }
+
+  const mosaicSplitEarly = splitMosaicCardSetCombinedValue(trimmedRaw, distinctValues);
+  if (mosaicSplitEarly) {
+    return runP0ReconciliationPipeline(
+      {
+        cardSetName: mosaicSplitEarly.cardSetName,
+        parallel: mosaicSplitEarly.parallel ?? null,
+        cardSetCategory: mosaicSplitEarly.cardSetCategory,
       },
       rawValue,
       distinctValues,
@@ -1245,6 +2496,7 @@ export function normalizeCardSetRootName(
   const baseSetDisplayName = options?.baseSetDisplayName ?? "Base Set";
   const trimmed = root.trim();
   const key = normalizeKey(trimmed);
+  if (key === "showtimes signatures") return "Showtime Signatures";
   if (key === "base" || key === "base set") return baseSetDisplayName;
   if (key.startsWith("base set - ")) return trimmed;
   if (key.startsWith("base ")) {
@@ -1300,7 +2552,8 @@ function isRatedRookiesSubsetPattern(cardSetName: string, rawValue?: string): bo
 
   if (
     rawKey.startsWith("rated rookie ") &&
-    !rawKey.includes("box topper")
+    !rawKey.includes("box topper") &&
+    !rawKey.includes("signature patches")
   ) {
     return true;
   }
@@ -1317,6 +2570,15 @@ function isOpticPreviewSubsetPattern(cardSetName: string, rawValue?: string): bo
   );
 }
 
+function isRookieVariationsSubsetPattern(
+  cardSetName: string,
+  rawValue?: string
+): boolean {
+  const key = normalizeKey(cardSetName);
+  const rawKey = rawValue ? normalizeKey(normalizeSelectRawCardSetValue(rawValue)) : "";
+  return key === "rookie variations" || rawKey.startsWith("rookie variations ");
+}
+
 export function resolveFinalCardSetCategory(
   cardSetName: string,
   rawValue: string,
@@ -1324,6 +2586,10 @@ export function resolveFinalCardSetCategory(
   options?: { usesSpectraCardSetRules?: boolean }
 ): string {
   if (isOpticPreviewSubsetPattern(cardSetName, rawValue)) {
+    return "Subset";
+  }
+
+  if (isRookieVariationsSubsetPattern(cardSetName, rawValue)) {
     return "Subset";
   }
 
@@ -1369,8 +2635,9 @@ export function inferCardSetCategory(
   const key = normalizeKey(cardSetName);
   if (BASE_SET_ROOTS.has(key)) return "Base Set";
   if (isSelectBaseTierCardSetName(cardSetName)) return "Base Set";
+  if (key === "commons" || key === "prizms") return "Base Set";
 
-  const rawKey = rawValue ? normalizeKey(rawValue) : "";
+  const rawKey = rawValue ? normalizeKey(normalizeSelectRawCardSetValue(rawValue)) : "";
   if (
     rawKey.startsWith("base ") &&
     !BASE_SET_ROOTS.has(key) &&
@@ -1503,8 +2770,27 @@ export function splitCombinedCardSetValue(
   return { cardSetName: normalizeCardSetRootName(trimmed) };
 }
 
-export function buildCardSetSplitIndex(
+export function buildP0CardSetSplitCaches(
   distinctValues: string[]
+): Dm2CardSetSplitCorrectionCaches {
+  const values = [
+    ...new Set(distinctValues.map((value) => value.trim()).filter(Boolean)),
+  ];
+  return {
+    siblingIndex: buildSiblingParallelFamilySplitIndex(values),
+    baseIndex: buildBasePrefixedSplitIndex(values),
+    spectraIndex: buildSpectraCrossYearSplitIndex(values),
+    crossProductIndex: buildCrossProductYearSplitIndex(values),
+    spectraProductLineBaseIndex: buildSpectraProductLineBaseSplitIndex(values),
+    selectPrizmsBaseIndex: buildSelectPrizmsBaseSplitIndex(values),
+    baseSetDisplayName: resolveBaseCardSetDisplayName(values),
+    usesSpectraCardSetRules: usesSpectraCardSetRules(values),
+  };
+}
+
+export function buildCardSetSplitIndex(
+  distinctValues: string[],
+  caches?: Dm2CardSetSplitCorrectionCaches
 ): Map<
   string,
   { cardSetName: string; parallel?: string; cardSetCategory: string }
@@ -1512,29 +2798,16 @@ export function buildCardSetSplitIndex(
   const values = [
     ...new Set(distinctValues.map((value) => value.trim()).filter(Boolean)),
   ];
-  const siblingIndex = buildSiblingParallelFamilySplitIndex(values);
-  const baseIndex = buildBasePrefixedSplitIndex(values);
-  const spectraIndex = buildSpectraCrossYearSplitIndex(values);
-  const spectraProductLineBaseIndex = buildSpectraProductLineBaseSplitIndex(values);
-  const baseSetDisplayName = resolveBaseCardSetDisplayName(values);
-  const usesSpectraRules = usesSpectraCardSetRules(values);
+  const splitCaches = caches ?? buildP0CardSetSplitCaches(values);
   const suffixIndex = buildParallelSuffixIndex(values);
-  const splitCaches: Dm2CardSetSplitCorrectionCaches = {
-    siblingIndex,
-    baseIndex,
-    spectraIndex,
-    spectraProductLineBaseIndex,
-    baseSetDisplayName,
-    usesSpectraCardSetRules: usesSpectraRules,
-  };
   const index = new Map<
     string,
     { cardSetName: string; parallel?: string; cardSetCategory: string }
   >();
 
   for (const value of values) {
-    const baseSplit = baseIndex.get(value);
-    const siblingSplit = siblingIndex.get(value);
+    const baseSplit = splitCaches.baseIndex?.get(value);
+    const siblingSplit = splitCaches.siblingIndex?.get(value);
     const resolvedSplit = baseSplit ?? siblingSplit;
 
     if (resolvedSplit) {
