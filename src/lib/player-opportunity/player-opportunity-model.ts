@@ -65,7 +65,12 @@ function enrichQualityFromLegacy(
 ): { qualityScore: number; confidencePenalty: number } {
   const base = scorePlayerQuality(context.qualitySignals, context.lifecycle);
 
-  if (!cardContext) return base;
+  if (!cardContext) {
+    return {
+      qualityScore: base.score,
+      confidencePenalty: base.confidencePenalty,
+    };
+  }
 
   const weights = resolveWeightProfile({
     sport: cardContext.asset.sport,
@@ -78,8 +83,9 @@ function enrichQualityFromLegacy(
   const blended = clampScore(base.score * 0.4 + legacy.score * 0.6);
 
   return {
-    score: blended,
-    confidencePenalty: legacy.confidence === "none" ? base.confidencePenalty + 10 : base.confidencePenalty,
+    qualityScore: blended,
+    confidencePenalty:
+      legacy.confidence === "none" ? base.confidencePenalty + 10 : base.confidencePenalty,
   };
 }
 
@@ -101,7 +107,7 @@ export function computePlayerOpportunity(
 
   const opportunityScore = weightedPlayerOpportunityScore(
     {
-      qualityScore: quality.score,
+      qualityScore: quality.qualityScore,
       futureOutlookScore,
       demandScore: demand.score,
       sportMarketScore: sport.score,
@@ -144,7 +150,7 @@ export function computePlayerOpportunity(
   } else if (sport.momentumScore <= 40) {
     negativeDrivers.push("Sport market momentum is soft.");
   }
-  if (quality.score >= 70) positiveDrivers.push("Player quality/legacy profile is strong.");
+  if (quality.qualityScore >= 70) positiveDrivers.push("Player quality/legacy profile is strong.");
   if (context.sportMarket?.provenance.available && context.sportMarket.outlookScore >= 60) {
     positiveDrivers.push("Basketball market index outlook is bullish.");
   }
@@ -182,7 +188,7 @@ export function computePlayerOpportunity(
     modelVersion: PLAYER_OPPORTUNITY_MODEL_VERSION,
     computedAt,
     opportunityScore,
-    qualityScore: quality.score,
+    qualityScore: quality.qualityScore,
     futureOutlookScore,
     demandScore: demand.score,
     sportMarketScore: sport.score,
