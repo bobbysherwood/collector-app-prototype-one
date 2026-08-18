@@ -17,6 +17,11 @@ import {
   getDm2Manufacturers,
   getDm2Parallels,
 } from "@/lib/data-model-v2-data";
+import { getSportMarketIndexAdminMeta } from "@/app/actions/market-index";
+import {
+  getCardInvestmentAdminMeta,
+  getPlayerOpportunityAdminMeta,
+} from "@/app/actions/ai-models-admin";
 import { getMarketSentimentSourcesWithMeta } from "@/lib/market-sentiment-data";
 import { getAdminPickLists } from "@/lib/pick-list-data";
 
@@ -100,11 +105,24 @@ export async function AdminSectionContent({ section }: AdminSectionContentProps)
     }
 
     case "ai-indexes": {
-      const sentimentSourcesMeta = await getMarketSentimentSourcesWithMeta();
+      const [
+        sentimentSourcesMeta,
+        sportMarketIndexMeta,
+        cardInvestmentMeta,
+        playerOpportunityMeta,
+      ] = await Promise.all([
+        getMarketSentimentSourcesWithMeta(),
+        getSportMarketIndexAdminMeta(),
+        getCardInvestmentAdminMeta(),
+        getPlayerOpportunityAdminMeta(),
+      ]);
       return (
         <AdminAiIndexesPanel
           sentimentSources={sentimentSourcesMeta.sources}
           sentimentSourcesUsingDefaults={sentimentSourcesMeta.usingDefaults}
+          sportMarketIndexMeta={sportMarketIndexMeta}
+          cardInvestmentMeta={cardInvestmentMeta}
+          playerOpportunityMeta={playerOpportunityMeta}
         />
       );
     }

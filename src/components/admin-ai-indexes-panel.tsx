@@ -10,9 +10,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AdminCardInvestmentPanel } from "@/components/admin-card-investment-panel";
 import { AdminMarketSentimentSourcesPanel } from "@/components/admin-market-sentiment-sources-panel";
+import { AdminPlayerOpportunityPanel } from "@/components/admin-player-opportunity-panel";
+import { AdminSportMarketIndexPanel } from "@/components/admin-sport-market-index-panel";
+import type {
+  CardInvestmentAdminMeta,
+  PlayerOpportunityAdminMeta,
+} from "@/app/actions/ai-models-admin";
+import type { SportMarketIndexAdminMeta } from "@/app/actions/market-index";
 import {
+  AI_PREDICTION_MODEL_LAYERS,
   AI_PREDICTION_MODELS,
+  type AiPredictionModelLayer,
   type AiPredictionModelStatus,
 } from "@/types/ai-prediction-models";
 import type { MarketSentimentSource } from "@/types/market-sentiment";
@@ -41,21 +51,42 @@ function modelStatusVariant(
   }
 }
 
+function layerLabel(layer: AiPredictionModelLayer): string {
+  return AI_PREDICTION_MODEL_LAYERS[layer].label;
+}
+
 export function AdminAiIndexesPanel({
   sentimentSources,
   sentimentSourcesUsingDefaults = false,
+  sportMarketIndexMeta,
+  cardInvestmentMeta,
+  playerOpportunityMeta,
 }: {
   sentimentSources: MarketSentimentSource[];
   sentimentSourcesUsingDefaults?: boolean;
+  sportMarketIndexMeta: SportMarketIndexAdminMeta;
+  cardInvestmentMeta: CardInvestmentAdminMeta;
+  playerOpportunityMeta: PlayerOpportunityAdminMeta;
 }) {
+  const activeCount = AI_PREDICTION_MODELS.filter(
+    (model) => model.status === "active"
+  ).length;
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">AI Indexes</h2>
         <p className="text-sm text-muted-foreground">
           Prediction models and public data sources that power card valuation,
-          outlook, and investment guidance.
+          player opportunity scoring, sport market context, and investment guidance.
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge variant="secondary">
+            {activeCount} of {AI_PREDICTION_MODELS.length} models active
+          </Badge>
+          <Badge variant="outline">V1 deterministic scoring</Badge>
+          <Badge variant="outline">NBA basketball focus</Badge>
+        </div>
       </div>
 
       {sentimentSourcesUsingDefaults ? (
@@ -76,7 +107,8 @@ export function AdminAiIndexesPanel({
             <div>
               <h3 className="text-sm font-medium">Prediction models</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Initial model roadmap for forecasting card future value.
+                Full model registry across card investment, market index, and player
+                opportunity layers.
               </p>
             </div>
             <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -87,9 +119,12 @@ export function AdminAiIndexesPanel({
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[48px]">#</TableHead>
-                  <TableHead className="min-w-[220px]">Model</TableHead>
+                  <TableHead className="min-w-[200px]">Model</TableHead>
+                  <TableHead className="w-[140px]">Layer</TableHead>
                   <TableHead>Purpose</TableHead>
-                  <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="w-[160px]">Version</TableHead>
+                  <TableHead className="min-w-[180px]">Wired to</TableHead>
+                  <TableHead className="w-[100px]">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -99,8 +134,19 @@ export function AdminAiIndexesPanel({
                       {model.sortOrder}
                     </TableCell>
                     <TableCell className="font-medium">{model.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {layerLabel(model.layer)}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {model.description}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {model.modelVersion ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {model.wiredTo ?? "—"}
                     </TableCell>
                     <TableCell>
                       <Badge variant={modelStatusVariant(model.status)}>
@@ -115,10 +161,16 @@ export function AdminAiIndexesPanel({
         </details>
       </section>
 
+      <AdminSportMarketIndexPanel meta={sportMarketIndexMeta} />
+
       <AdminMarketSentimentSourcesPanel
         sources={sentimentSources}
         readOnly={sentimentSourcesUsingDefaults}
       />
+
+      <AdminCardInvestmentPanel meta={cardInvestmentMeta} />
+
+      <AdminPlayerOpportunityPanel meta={playerOpportunityMeta} />
     </div>
   );
 }

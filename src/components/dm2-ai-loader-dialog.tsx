@@ -686,7 +686,11 @@ export function Dm2AiLoaderDialog() {
           <section className="rounded-xl border border-border/80 bg-muted/20 px-4 py-3 text-sm">
             <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>Accepted types: PDF, XLSX, XLS, CSV</li>
-              <li>Upload up to 10 files per session (10 MB per file, 20 MB total)</li>
+              <li>
+                Upload up to {DM2_IMPORT_MAX_FILES} files per session (
+                {formatMegabytes(DM2_IMPORT_MAX_FILE_BYTES)} per file,{" "}
+                {formatMegabytes(DM2_IMPORT_MAX_TOTAL_BYTES)} total)
+              </li>
               <li>Multiple files merge into one review before commit</li>
               <li>Uses existing catalog data and public web research to improve mappings</li>
               <li>Requires OPENAI_API_KEY on the server</li>

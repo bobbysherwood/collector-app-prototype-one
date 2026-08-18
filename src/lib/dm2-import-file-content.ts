@@ -37,11 +37,12 @@ import type {
   Dm2ImportSessionContext,
 } from "@/types/dm2-import";
 
+/** Admin checklist imports — sized for full brand harvest outputs (e.g. Panini ~1.7M rows). */
 export const DM2_IMPORT_MAX_FILES = 10;
-export const DM2_IMPORT_MAX_TOTAL_ROWS = 50_000;
-export const DM2_IMPORT_MAX_ROWS_PER_FILE = 50_000;
-export const DM2_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024;
-export const DM2_IMPORT_MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+export const DM2_IMPORT_MAX_TOTAL_ROWS = 2_000_000;
+export const DM2_IMPORT_MAX_ROWS_PER_FILE = 2_000_000;
+export const DM2_IMPORT_MAX_FILE_BYTES = 200 * 1024 * 1024;
+export const DM2_IMPORT_MAX_TOTAL_BYTES = 250 * 1024 * 1024;
 export const DM2_IMPORT_AI_SAMPLE_ROWS = 60;
 export const DM2_IMPORT_LARGE_ROW_THRESHOLD = 1_000;
 export const DM2_IMPORT_MAX_DISTINCT_VALUES_FOR_AI = 200;

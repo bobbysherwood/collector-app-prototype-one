@@ -11,7 +11,12 @@
     "seed:valuations": "npx tsx scripts/seed-valuations-only.ts",
     "seed:sales": "npx tsx scripts/seed-sales-only.ts",
     "ebay:seller-auth": "npx tsx scripts/ebay-seller-auth.ts",
-    "ebay:create-listings": "npx tsx scripts/create-ebay-sandbox-listings.ts"
+    "ebay:create-listings": "npx tsx scripts/create-ebay-sandbox-listings.ts",
+    "checklist-harvest": "npx tsx scripts/checklist-harvest/cli.ts",
+    "checklist-harvest:run": "npx tsx scripts/checklist-harvest/cli.ts run",
+    "checklist-harvest:approve": "npx tsx scripts/checklist-harvest/cli.ts approve",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -19,10 +24,15 @@
     "@supabase/supabase-js": "^2.110.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "commander": "^15.0.0",
+    "csv-parse": "^7.0.2",
+    "csv-stringify": "^6.8.3",
     "lucide-react": "^1.23.0",
     "next": "16.2.10",
     "openai": "^6.45.0",
+    "p-limit": "^7.3.1",
     "pdf-parse": "^2.4.5",
+    "playwright": "^1.62.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.9.2",
@@ -40,6 +50,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
