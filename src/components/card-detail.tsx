@@ -44,6 +44,7 @@ import { getMockMarketSales } from "@/lib/market-sales/mock-provider";
 import { getMockMarketPredictionsForAsset } from "@/lib/market-sales/mock-predictions-provider";
 import { enrichAssetForMarketSearch } from "@/lib/market-sales/asset-context";
 import { MarketSalesSection } from "@/components/market-sales-section";
+import { PlayerCardOpportunityPanel } from "@/components/player-card-opportunity-panel";
 import { Dm2CardAttributeBadges } from "@/components/dm2-card-attribute-badges";
 import { groupValuationsByLot } from "@/lib/valuations";
 import { getImageUrl } from "@/lib/images";
@@ -260,6 +261,8 @@ export function CardDetail({
           </CardContent>
         </Card>
       )}
+
+      <PlayerCardOpportunityPanel cardId={asset.id} />
 
       <MarketSalesSection
         asset={marketAsset}

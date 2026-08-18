@@ -6,10 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dm2CardSearchTiles } from "@/components/dm2-card-search-tiles";
 import { MarketResearchSearchPanel } from "@/components/market-research-search-panel";
+import { SportMarketIndexCard } from "@/components/sport-market-index-card";
+import { resolveSportMarketIndexId } from "@/lib/market-index/resolve-sport-index-id";
 import type { MarketResearchSearchSelection } from "@/types/data-model-v2";
 
 export function MarketResearchMockup() {
   const [selection, setSelection] = useState<MarketResearchSearchSelection | null>(null);
+  const sportIndexId =
+    selection?.type === "sport"
+      ? resolveSportMarketIndexId(selection.sport.sport)
+      : null;
 
   return (
     <div className="space-y-8">
@@ -39,8 +45,9 @@ export function MarketResearchMockup() {
 
       <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">Design preview.</span> Search uses the
-        Data Model v2 catalog (by card, player, or sport). Click a card tile to open its
-        market outlook, sales history, and listings.
+        Data Model v2 catalog (by card, player, or sport). Sport search for Basketball
+        includes the live Sport Market Index. Click a card tile to open its market outlook,
+        sales history, and listings.
       </div>
 
       <MarketResearchSearchPanel
@@ -57,11 +64,19 @@ export function MarketResearchMockup() {
       ) : null}
 
       {selection?.type === "sport" ? (
-        <Dm2CardSearchTiles
-          key={`sport-results-${selection.sport.sport}`}
-          fixedQuery={selection.sport.sport}
-          hideSearchInput
-        />
+        <>
+          {sportIndexId ? (
+            <SportMarketIndexCard
+              sportIndexId={sportIndexId}
+              sportLabel={selection.sport.sport}
+            />
+          ) : null}
+          <Dm2CardSearchTiles
+            key={`sport-results-${selection.sport.sport}`}
+            fixedQuery={selection.sport.sport}
+            hideSearchInput
+          />
+        </>
       ) : null}
     </div>
   );
