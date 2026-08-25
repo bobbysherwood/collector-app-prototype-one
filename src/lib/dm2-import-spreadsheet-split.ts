@@ -28,6 +28,99 @@ function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
+type ProductRuleFlags = {
+  spectra: boolean;
+  select: boolean;
+  hoops: boolean;
+  mosaic: boolean;
+  mosaicVariant: "2023" | "2024" | null;
+};
+
+let productRuleFlagsCache: {
+  values: readonly string[];
+  flags: ProductRuleFlags;
+} | null = null;
+
+function sameStringList(left: readonly string[], right: readonly string[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function getProductRuleFlags(distinctValues: string[]): ProductRuleFlags {
+  if (
+    productRuleFlagsCache &&
+    sameStringList(productRuleFlagsCache.values, distinctValues)
+  ) {
+    return productRuleFlagsCache.flags;
+  }
+
+  const keys = new Set(
+    distinctValues.map((value) =>
+      normalizeKey(normalizeSelectRawCardSetValue(value))
+    )
+  );
+  const values = distinctValues.map((value) => value.trim()).filter(Boolean);
+
+  const spectra =
+    values.some(isSpectraCrossYearCombinedValue) ||
+    values.some((value) => normalizeKey(value) === "spectra base") ||
+    values.some((value) => /^Spectra (Black|Gold|Red)\b/i.test(value));
+
+  const select =
+    (keys.has("commons") && keys.has("prizms")) ||
+    (keys.has("commons") && keys.has("glossy parallel")) ||
+    (keys.has("prizms") && (keys.has("prizms black") || keys.has("prizms gold")));
+
+  const hoopsMarkers = [
+    "class of 2021",
+    "lights camera action",
+    "hot signatures rookies",
+    "base hoops tribute",
+    "base hoops tribute premium box set",
+    "base hoops tribute premium box set autographs",
+    "hoops art signatures horizotal",
+    "road to the finals first round",
+  ];
+  const hoops =
+    !spectra && !select && hoopsMarkers.some((marker) => keys.has(marker));
+
+  const mosaicMarkers = [
+    "base mosaic",
+    "micro mosaic",
+    "rookie variations fast break",
+    "bank shot mosaic",
+    "bank shot",
+    "give and go mosaic",
+    "thunder road mosaic",
+  ];
+  const mosaic =
+    !spectra &&
+    !select &&
+    !hoops &&
+    (mosaicMarkers.some((marker) => keys.has(marker)) ||
+      (keys.has("base") && [...keys].some((key) => key.startsWith("base mosaic"))));
+
+  const mosaicVariant: ProductRuleFlags["mosaicVariant"] = mosaic
+    ? distinctValues.some((value) => /^202[4-9] Panini /i.test(value.trim()))
+      ? "2024"
+      : "2023"
+    : null;
+
+  const flags: ProductRuleFlags = {
+    spectra,
+    select,
+    hoops,
+    mosaic,
+    mosaicVariant,
+  };
+  productRuleFlagsCache = { values: distinctValues, flags };
+  return flags;
+}
+
 function isSelectBaseTierCardSetName(value: string): boolean {
   const key = normalizeKey(value);
   return SELECT_BASE_TIER_NAMES.some(
@@ -180,15 +273,7 @@ export function normalizeSelectRawCardSetValue(rawValue: string): string {
 
 /** Panini Select / Hoops-style: Commons + parallel base tiers share product-line rules. */
 export function usesSelectCardSetRules(distinctValues: string[]): boolean {
-  const keys = new Set(
-    distinctValues.map((value) => normalizeKey(normalizeSelectRawCardSetValue(value)))
-  );
-  if (keys.has("commons") && keys.has("prizms")) return true;
-  if (keys.has("commons") && keys.has("glossy parallel")) return true;
-  return (
-    keys.has("prizms") &&
-    (keys.has("prizms black") || keys.has("prizms gold"))
-  );
+  return getProductRuleFlags(distinctValues).select;
 }
 
 export function splitSelectPrizmsBaseCombinedValue(
@@ -264,50 +349,12 @@ export function buildSelectPrizmsBaseSplitIndex(
 
 /** Panini Hoops (2021+): card set identity is `Base`; compound inserts stay atomic. */
 export function usesHoopsCardSetRules(distinctValues: string[]): boolean {
-  const keys = new Set(
-    distinctValues.map((value) => normalizeKey(normalizeSelectRawCardSetValue(value)))
-  );
-  if (usesSpectraCardSetRules(distinctValues)) return false;
-  if (usesSelectCardSetRules(distinctValues)) return false;
-
-  const hoopsMarkers = [
-    "class of 2021",
-    "lights camera action",
-    "hot signatures rookies",
-    "base hoops tribute",
-    "base hoops tribute premium box set",
-    "base hoops tribute premium box set autographs",
-    "hoops art signatures horizotal",
-    "road to the finals first round",
-  ];
-  return hoopsMarkers.some((marker) => keys.has(marker));
+  return getProductRuleFlags(distinctValues).hoops;
 }
 
 /** Panini Mosaic (2023+): product-specific insert rules apply; base naming varies by year. */
 export function usesMosaicCardSetRules(distinctValues: string[]): boolean {
-  const keys = new Set(
-    distinctValues.map((value) => normalizeKey(normalizeSelectRawCardSetValue(value)))
-  );
-  if (usesSpectraCardSetRules(distinctValues)) return false;
-  if (usesSelectCardSetRules(distinctValues)) return false;
-  if (usesHoopsCardSetRules(distinctValues)) return false;
-
-  const mosaicMarkers = [
-    "base mosaic",
-    "micro mosaic",
-    "rookie variations fast break",
-    "bank shot mosaic",
-    "bank shot",
-    "give and go mosaic",
-    "thunder road mosaic",
-  ];
-  if (mosaicMarkers.some((marker) => keys.has(marker))) return true;
-
-  if (keys.has("base") && [...keys].some((key) => key.startsWith("base mosaic"))) {
-    return true;
-  }
-
-  return false;
+  return getProductRuleFlags(distinctValues).mosaic;
 }
 
 /**
@@ -318,11 +365,7 @@ export function usesMosaicCardSetRules(distinctValues: string[]): boolean {
 export function resolveMosaicProgramVariant(
   distinctValues: string[]
 ): "2023" | "2024" | null {
-  if (!usesMosaicCardSetRules(distinctValues)) return null;
-  if (distinctValues.some((value) => /^202[4-9] Panini /i.test(value.trim()))) {
-    return "2024";
-  }
-  return "2023";
+  return getProductRuleFlags(distinctValues).mosaicVariant;
 }
 
 function usesMosaic2024BaseNaming(distinctValues: string[]): boolean {
@@ -743,13 +786,7 @@ function isHoopsPreservedCompoundInsertPattern(value: string): boolean {
 
 /** Spectra uses `Base`; Hoops 2021+ uses `Base`; other products use `Base Set`. */
 export function usesSpectraCardSetRules(distinctValues: string[]): boolean {
-  const values = distinctValues.map((value) => value.trim()).filter(Boolean);
-  if (values.some(isSpectraCrossYearCombinedValue)) return true;
-  if (values.some((value) => normalizeKey(value) === "spectra base")) return true;
-  if (values.some((value) => /^Spectra (Black|Gold|Red)\b/i.test(value))) {
-    return true;
-  }
-  return false;
+  return getProductRuleFlags(distinctValues).spectra;
 }
 
 export function resolveBaseCardSetDisplayName(distinctValues: string[]): string {
@@ -842,22 +879,39 @@ export function buildSpectraCrossYearSplitIndex(
   return index;
 }
 
+let cardSetRootsCache: {
+  values: readonly string[];
+  caseInsensitivePrefix: boolean;
+  roots: string[];
+} | null = null;
+
 function findCardSetRootsInternal(
   distinctValues: string[],
   caseInsensitivePrefix: boolean
 ): string[] {
+  if (
+    cardSetRootsCache &&
+    cardSetRootsCache.caseInsensitivePrefix === caseInsensitivePrefix &&
+    sameStringList(cardSetRootsCache.values, distinctValues)
+  ) {
+    return cardSetRootsCache.roots;
+  }
+
   const values = [
     ...new Set(distinctValues.map((value) => value.trim()).filter(Boolean)),
   ];
-  return values.filter((value) =>
-    !values.some((other) => {
-      if (other === value) return false;
-      if (caseInsensitivePrefix) {
-        return value.toLowerCase().startsWith(`${other.toLowerCase()} `);
-      }
-      return value.startsWith(`${other} `);
-    })
+  const roots = values.filter(
+    (value) =>
+      !values.some((other) => {
+        if (other === value) return false;
+        if (caseInsensitivePrefix) {
+          return value.toLowerCase().startsWith(`${other.toLowerCase()} `);
+        }
+        return value.startsWith(`${other} `);
+      })
   );
+  cardSetRootsCache = { values: distinctValues, caseInsensitivePrefix, roots };
+  return roots;
 }
 
 export function findCardSetRoots(distinctValues: string[]): string[] {
@@ -1468,7 +1522,19 @@ function isParallelStemOnlyRoot(root: string): boolean {
 }
 
 /** Detect subset titles embedded in `Base …` CARD SET values (e.g. Base Rated Rookies). */
+let baseEmbeddedSubsetNamesCache: {
+  values: readonly string[];
+  names: string[];
+} | null = null;
+
 export function findBaseEmbeddedSubsetNames(distinctValues: string[]): string[] {
+  if (
+    baseEmbeddedSubsetNamesCache &&
+    sameStringList(baseEmbeddedSubsetNamesCache.values, distinctValues)
+  ) {
+    return baseEmbeddedSubsetNamesCache.names;
+  }
+
   const afterBaseValues = distinctValues
     .map((value) => value.trim())
     .filter((value) => normalizeKey(value).startsWith("base "))
@@ -1476,9 +1542,12 @@ export function findBaseEmbeddedSubsetNames(distinctValues: string[]): string[] 
     .filter(Boolean)
     .filter((value) => !normalizeKey(value).startsWith("set - "));
 
-  if (afterBaseValues.length < 2) return [];
+  if (afterBaseValues.length < 2) {
+    baseEmbeddedSubsetNamesCache = { values: distinctValues, names: [] };
+    return [];
+  }
 
-  return findCardSetRoots(afterBaseValues)
+  const names = findCardSetRoots(afterBaseValues)
     .filter((root) => {
       const rootKey = normalizeKey(root);
       if (
@@ -1500,6 +1569,9 @@ export function findBaseEmbeddedSubsetNames(distinctValues: string[]): string[] 
       (a, b) =>
         b.split(/\s+/).length - a.split(/\s+/).length || b.length - a.length
     );
+
+  baseEmbeddedSubsetNamesCache = { values: distinctValues, names };
+  return names;
 }
 
 export function splitBasePrefixedCombinedValue(
