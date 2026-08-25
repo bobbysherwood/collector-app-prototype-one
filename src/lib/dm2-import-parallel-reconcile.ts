@@ -1,4 +1,4 @@
-import { findCardSetRoots, isCrossProductYearCombinedValue, isSpectraCrossYearCombinedValue, normalizeCardSetRootName, countCardSetPrefixFamilyMembers } from "@/lib/dm2-import-spreadsheet-split";
+import { isCrossProductYearCombinedValue, isSpectraCrossYearCombinedValue, normalizeCardSetRootName, countCardSetPrefixFamilyMembers } from "@/lib/dm2-import-spreadsheet-split";
 import type { Dm2ExtractedRow, Dm2ImportCatalogContext } from "@/types/dm2-import";
 
 type CardSetValueSplit = {
@@ -261,7 +261,10 @@ export function isKnownCatalogParallelName(
   return buildCatalogParallelKeyMap(catalogParallels).has(normalizeKey(name));
 }
 
-/** Catalog parallels plus compounds inferred from sibling CARD SET values (longest first). */
+/** Catalog parallels plus compounds inferred from sibling CARD SET values (longest first).
+ * Only suffixes that actually appear in the file are added — never the cartesian
+ * product of every inferred suffix / catalog parallel pair.
+ */
 export function buildExtendedParallelCandidates(
   catalogParallels: string[],
   distinctValues: string[]
@@ -279,49 +282,30 @@ export function buildExtendedParallelCandidates(
     ...new Set(distinctValues.map((value) => value.trim()).filter(Boolean)),
   ];
 
+  const observedSuffixes: string[] = [];
   for (const value of values) {
     for (const root of values) {
       if (value === root) continue;
       const rootKey = normalizeKey(root);
       const valueKey = normalizeKey(value);
       if (!valueKey.startsWith(`${rootKey} `)) continue;
-      add(value.slice(root.length).trim());
+      const suffix = value.slice(root.length).trim();
+      if (!suffix) continue;
+      add(suffix);
+      observedSuffixes.push(suffix);
     }
   }
 
-  const catalogList = [...byKey.values()];
-  for (const root of findCardSetRoots(values)) {
-    const members = values.filter(
-      (value) =>
-        normalizeKey(value) === normalizeKey(root) ||
-        normalizeKey(value).startsWith(`${normalizeKey(root)} `)
-    );
-    const suffixes = members
-      .map((member) =>
-        normalizeKey(member) === normalizeKey(root)
-          ? ""
-          : member.slice(root.length).trim()
-      )
-      .filter(Boolean);
-
-    for (const suffix of suffixes) {
-      add(suffix);
-    }
-
-    for (const prefix of catalogList) {
-      const prefixKey = normalizeKey(prefix);
-      for (const suffix of suffixes) {
-        const suffixKey = normalizeKey(suffix);
-        if (suffixKey.startsWith(`${prefixKey} `)) {
-          add(suffix);
-        } else if (suffixKey === prefixKey) {
-          for (const secondary of catalogList) {
-            const secondaryKey = normalizeKey(secondary);
-            if (secondaryKey === prefixKey) continue;
-            add(`${prefix} ${secondary}`);
-          }
-        }
-      }
+  const uniqueObserved = [
+    ...new Map(
+      observedSuffixes.map((suffix) => [normalizeKey(suffix), suffix])
+    ).values(),
+  ];
+  for (const longer of uniqueObserved) {
+    for (const shorter of uniqueObserved) {
+      if (longer === shorter) continue;
+      if (!normalizeKey(longer).startsWith(`${normalizeKey(shorter)} `)) continue;
+      add(longer.slice(shorter.length).trim());
     }
   }
 
@@ -420,13 +404,7 @@ export function resolveBestParallelSuffix(
     const boundaryIndex = trimmed.length - parallel.length;
     if (boundaryIndex > 0 && trimmed[boundaryIndex - 1] !== " ") continue;
 
-    if (
-      !bestMatch ||
-      parallel.length > bestMatch.length ||
-      (parallel.length === bestMatch.length &&
-        parallelCandidates.indexOf(parallel) <
-          parallelCandidates.indexOf(bestMatch))
-    ) {
+    if (!bestMatch || parallel.length > bestMatch.length) {
       bestMatch = parallel;
     }
   }
