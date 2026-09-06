@@ -313,6 +313,36 @@ export function buildExtendedParallelCandidates(
 }
 
 /** True when a catalog parallel token is part of the insert name, not a peelable suffix. */
+const WEAK_SET_NAME_REMNANTS = new Set(["a", "an", "and", "all", "of", "the"]);
+const PEELABLE_PARALLEL_FIRST_WORDS = new Set([
+  "aqua",
+  "black",
+  "blue",
+  "choice",
+  "fast",
+  "genesis",
+  "gold",
+  "green",
+  "holo",
+  "hyper",
+  "international",
+  "mosaic",
+  "neon",
+  "orange",
+  "pink",
+  "prizms",
+  "purple",
+  "red",
+  "silver",
+  "velocity",
+  "white",
+]);
+
+function isPeelableParallelPrefix(parallelPrefix: string): boolean {
+  const first = tokenizeWords(parallelPrefix)[0]?.toLowerCase();
+  return Boolean(first && PEELABLE_PARALLEL_FIRST_WORDS.has(first));
+}
+
 function isParallelPrefixEmbeddedInCardSetName(
   cardSetName: string,
   parallelPrefix: string
@@ -322,6 +352,7 @@ function isParallelPrefixEmbeddedInCardSetName(
   const prefixKey = normalizeKey(parallelPrefix);
 
   if (nameKey === "elite gold" && prefixKey === "gold") return true;
+  if (nameKey === "all nba" && prefixKey === "nba") return true;
   if (nameKey === "prizms" && prefixKey.startsWith("prizms")) return true;
   if (nameKey === "commons") return true;
   if (nameKey === "white hot rookies" || nameKey === "white hot stars") return true;
@@ -334,6 +365,25 @@ function isParallelPrefixEmbeddedInCardSetName(
   }
   if (/^production line\s-/i.test(trimmed)) {
     if (new Set(["scoring", "assists", "rebounds"]).has(prefixKey)) return true;
+  }
+
+  if (nameKey === prefixKey || !nameKey.endsWith(` ${prefixKey}`)) return false;
+
+  const nameWords = tokenizeWords(trimmed);
+  const prefixWords = tokenizeWords(parallelPrefix);
+  if (nameWords.length <= prefixWords.length) return false;
+
+  const remnant = nameWords
+    .slice(0, nameWords.length - prefixWords.length)
+    .join(" ");
+  if (WEAK_SET_NAME_REMNANTS.has(normalizeKey(remnant))) return true;
+
+  if (
+    nameWords.length === 2 &&
+    prefixWords.length === 1 &&
+    !isPeelableParallelPrefix(parallelPrefix)
+  ) {
+    return true;
   }
 
   return false;

@@ -1,5 +1,25 @@
 import type { SportMarketSnapshot } from "@/types/card-investment";
 
+export function driversFromComponentScores(
+  components: Record<string, number>,
+  labels: Record<string, string>
+): { positiveDrivers: string[]; negativeDrivers: string[] } {
+  const positiveDrivers: string[] = [];
+  const negativeDrivers: string[] = [];
+
+  for (const [key, score] of Object.entries(components)) {
+    const label = labels[key];
+    if (!label || !Number.isFinite(score)) continue;
+    if (score >= 60) {
+      positiveDrivers.push(`${label} is supporting the score (${Math.round(score)}).`);
+    } else if (score <= 40) {
+      negativeDrivers.push(`${label} is weighing on the score (${Math.round(score)}).`);
+    }
+  }
+
+  return { positiveDrivers, negativeDrivers };
+}
+
 export function computePlayerOpportunityExplanation(input: {
   opportunityScore: number;
   trend: string;

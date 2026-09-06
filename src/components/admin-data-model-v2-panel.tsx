@@ -109,8 +109,11 @@ import type {
   Dm2CardSetName,
   Dm2Manufacturer,
   Dm2Parallel,
+  Dm2Player,
 } from "@/types/data-model-v2";
 import type { PickListOption } from "@/types/pick-list";
+import { AdminDm2CardPopulationSection } from "@/components/admin-dm2-card-population-section";
+import { AdminDm2PlayersSection } from "@/components/admin-dm2-players-section";
 import { Dm2AiLoaderDialog } from "@/components/dm2-ai-loader-dialog";
 
 function IdCell({ id }: { id: string }) {
@@ -126,6 +129,7 @@ export function AdminDataModelV2Panel({
   manufacturers,
   brands,
   parallels,
+  players,
   attributes,
   cardSets,
 }: {
@@ -135,6 +139,7 @@ export function AdminDataModelV2Panel({
   manufacturers: Dm2Manufacturer[];
   brands: Dm2Brand[];
   parallels: Dm2Parallel[];
+  players: Dm2Player[];
   attributes: Dm2Attribute[];
   cardSets: Dm2CardSet[];
 }) {
@@ -447,6 +452,7 @@ export function AdminDataModelV2Panel({
       <ManufacturerSection rows={manufacturers} />
       <BrandSection rows={brands} manufacturers={manufacturers} />
       <ParallelSection rows={parallels} />
+      <AdminDm2PlayersSection players={players} sports={sports} />
       <AttributeSection rows={attributes} />
       <CardSetSection
         rows={cardSets}
@@ -457,8 +463,10 @@ export function AdminDataModelV2Panel({
         cardSetCategories={cardSetCategories}
         cardSetNames={cardSetNames}
         parallels={parallels}
+        players={players}
         attributes={attributes}
       />
+      <AdminDm2CardPopulationSection cardSets={cardSets} />
     </div>
   );
 }
@@ -1471,6 +1479,7 @@ function CardSetSection({
   cardSetCategories,
   cardSetNames,
   parallels,
+  players,
   attributes,
 }: {
   rows: Dm2CardSet[];
@@ -1481,6 +1490,7 @@ function CardSetSection({
   cardSetCategories: Dm2CardSetCategory[];
   cardSetNames: Dm2CardSetName[];
   parallels: Dm2Parallel[];
+  players: Dm2Player[];
   attributes: Dm2Attribute[];
 }) {
   const router = useRouter();
@@ -1506,7 +1516,8 @@ function CardSetSection({
   const [cardsPending, setCardsPending] = useState(false);
   const [editCardRow, setEditCardRow] = useState<Dm2Card | null>(null);
   const [editCardNumber, setEditCardNumber] = useState("");
-  const [editPlayer, setEditPlayer] = useState("");
+  const [editPlayerIds, setEditPlayerIds] = useState<string[]>([]);
+  const [editPlayerQuery, setEditPlayerQuery] = useState("");
   const [editParallelId, setEditParallelId] = useState(NONE_PARALLEL_VALUE);
   const [imageCardRow, setImageCardRow] = useState<Dm2Card | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -2281,7 +2292,8 @@ function CardSetSection({
                                     onClick={() => {
                                       setEditCardRow(card);
                                       setEditCardNumber(card.cardNumber);
-                                      setEditPlayer(card.player);
+                                      setEditPlayerIds(card.playerIds);
+                                      setEditPlayerQuery("");
                                       setEditParallelId(parallelSelectValue(card.parallelId));
                                       setViewCardsError(null);
                                     }}
@@ -2433,7 +2445,8 @@ function CardSetSection({
           if (!open) {
             setEditCardRow(null);
             setEditCardNumber("");
-            setEditPlayer("");
+            setEditPlayerIds([]);
+            setEditPlayerQuery("");
             setEditParallelId(NONE_PARALLEL_VALUE);
           }
         }}
@@ -2442,7 +2455,7 @@ function CardSetSection({
           <DialogHeader>
             <DialogTitle>Edit card</DialogTitle>
             <DialogDescription>
-              Update card number, player name, or parallel for this catalog entry.
+              Update card number, linked players, or parallel for this catalog entry.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -2457,14 +2470,77 @@ function CardSetSection({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-card-player">Player name</Label>
+              <Label htmlFor="edit-card-player">Players</Label>
+              <div className="flex flex-wrap gap-1">
+                {editPlayerIds.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Select at least one player in this sport.
+                  </p>
+                ) : (
+                  players
+                    .filter((player) => editPlayerIds.includes(player.id))
+                    .map((player) => (
+                      <Badge key={player.id} variant="secondary">
+                        {player.name}
+                        <button
+                          type="button"
+                          className="ml-1"
+                          disabled={cardsPending}
+                          onClick={() =>
+                            setEditPlayerIds((current) =>
+                              current.filter((id) => id !== player.id)
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </Badge>
+                    ))
+                )}
+              </div>
               <Input
                 id="edit-card-player"
-                value={editPlayer}
-                onChange={(event) => setEditPlayer(event.target.value)}
-                maxLength={100}
+                value={editPlayerQuery}
+                onChange={(event) => setEditPlayerQuery(event.target.value)}
+                placeholder="Search players"
                 disabled={cardsPending}
               />
+              <div className="max-h-40 overflow-auto rounded-md border">
+                {players
+                  .filter(
+                    (player) =>
+                      player.active &&
+                      player.sportId === viewCardsRow?.sportId &&
+                      (!editPlayerQuery.trim() ||
+                        player.name
+                          .toLowerCase()
+                          .includes(editPlayerQuery.trim().toLowerCase()))
+                  )
+                  .slice(0, 40)
+                  .map((player) => {
+                    const selected = editPlayerIds.includes(player.id);
+                    return (
+                      <button
+                        key={player.id}
+                        type="button"
+                        disabled={cardsPending}
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-muted"
+                        onClick={() =>
+                          setEditPlayerIds((current) =>
+                            selected
+                              ? current.filter((id) => id !== player.id)
+                              : [...current, player.id]
+                          )
+                        }
+                      >
+                        <span>{player.name}</span>
+                        {selected ? (
+                          <span className="text-xs text-muted-foreground">Added</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-card-parallel">Parallel</Label>
@@ -2501,7 +2577,7 @@ function CardSetSection({
                 cardsPending ||
                 !editCardRow ||
                 !editCardNumber.trim() ||
-                !editPlayer.trim()
+                editPlayerIds.length === 0
               }
               onClick={() => {
                 if (!editCardRow || !viewCardsRow) return;
@@ -2511,7 +2587,7 @@ function CardSetSection({
                       id: editCardRow.id,
                       cardSetId: viewCardsRow.id,
                       cardNumber: editCardNumber,
-                      player: editPlayer,
+                      playerIds: editPlayerIds,
                       parallelId: parallelIdFromSelect(editParallelId),
                     }),
                   () => setEditCardRow(null)

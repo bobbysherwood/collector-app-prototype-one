@@ -29,6 +29,7 @@ export function dm2CardToSyntheticAsset(card: Dm2CardSearchResult): Asset {
     id: `${RESEARCH_ASSET_ID_PREFIX}${card.id}`,
     user_id: "research",
     player_name: card.player,
+    player_id: null,
     year: card.year,
     card_type: mapRepositoryBrandToCardType(card.brandName),
     sport: mapRepositoryCategoryToSport(card.sportName),
@@ -47,6 +48,7 @@ export function dm2CardToFormPrefill(
 ): Pick<
   CardFormData,
   | "player_name"
+  | "player_id"
   | "year"
   | "sport"
   | "manufacturer"
@@ -59,6 +61,7 @@ export function dm2CardToFormPrefill(
 > {
   return {
     player_name: card.player,
+    player_id: null,
     year: card.year,
     sport: mapRepositoryCategoryToSport(card.sportName),
     manufacturer: card.manufacturerName,

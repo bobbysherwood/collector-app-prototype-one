@@ -261,6 +261,106 @@ export function isSpectraCrossYearCombinedValue(value: string): boolean {
   return SPECTRA_CROSS_YEAR_PATTERN.test(value.trim());
 }
 
+type ProductRuleFlags = {
+  spectra: boolean;
+  select: boolean;
+  hoops: boolean;
+  mosaic: boolean;
+  mosaicVariant: "2023" | "2024" | null;
+};
+
+let productRuleFlagsCache: {
+  values: readonly string[];
+  flags: ProductRuleFlags;
+} | null = null;
+
+function sameStringList(
+  left: readonly string[],
+  right: readonly string[]
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function getProductRuleFlags(distinctValues: string[]): ProductRuleFlags {
+  if (
+    productRuleFlagsCache &&
+    sameStringList(productRuleFlagsCache.values, distinctValues)
+  ) {
+    return productRuleFlagsCache.flags;
+  }
+
+  const keys = new Set(
+    distinctValues.map((value) =>
+      normalizeKey(normalizeSelectRawCardSetValue(value))
+    )
+  );
+  const values = distinctValues.map((value) => value.trim()).filter(Boolean);
+
+  const spectra =
+    values.some(isSpectraCrossYearCombinedValue) ||
+    values.some((value) => normalizeKey(value) === "spectra base") ||
+    values.some((value) => /^Spectra (Black|Gold|Red)\b/i.test(value));
+
+  const select =
+    (keys.has("commons") && keys.has("prizms")) ||
+    (keys.has("commons") && keys.has("glossy parallel")) ||
+    (keys.has("prizms") &&
+      (keys.has("prizms black") || keys.has("prizms gold")));
+
+  const hoopsMarkers = [
+    "class of 2021",
+    "lights camera action",
+    "hot signatures rookies",
+    "base hoops tribute",
+    "base hoops tribute premium box set",
+    "base hoops tribute premium box set autographs",
+    "hoops art signatures horizotal",
+    "road to the finals first round",
+  ];
+  const hoops =
+    !spectra &&
+    !select &&
+    hoopsMarkers.some((marker) => keys.has(marker));
+
+  const mosaicMarkers = [
+    "base mosaic",
+    "micro mosaic",
+    "rookie variations fast break",
+    "bank shot mosaic",
+    "bank shot",
+    "give and go mosaic",
+    "thunder road mosaic",
+  ];
+  const mosaic =
+    !spectra &&
+    !select &&
+    !hoops &&
+    (mosaicMarkers.some((marker) => keys.has(marker)) ||
+      (keys.has("base") &&
+        [...keys].some((key) => key.startsWith("base mosaic"))));
+
+  const mosaicVariant: ProductRuleFlags["mosaicVariant"] = mosaic
+    ? distinctValues.some((value) => /^202[4-9] Panini /i.test(value.trim()))
+      ? "2024"
+      : "2023"
+    : null;
+
+  const flags: ProductRuleFlags = {
+    spectra,
+    select,
+    hoops,
+    mosaic,
+    mosaicVariant,
+  };
+  productRuleFlagsCache = { values: distinctValues, flags };
+  return flags;
+}
+
 /** True for cross-product inserts like `2024 Panini Origins Basketball - …`. */
 export function isCrossProductYearCombinedValue(value: string): boolean {
   return CROSS_PRODUCT_YEAR_PATTERN.test(value.trim());
@@ -964,7 +1064,7 @@ export function suffixAfterWordPrefix(value: string, prefix: string): string {
   return trimmed;
 }
 
-/** Card set names must not repeat words that appear in parallel suffixes. */
+/** Card set names must not end with the leading token of their parallel suffixes. */
 export function cardSetNameParallelWordsDisjoint(
   setName: string,
   parallelSuffixes: string[]
@@ -975,9 +1075,8 @@ export function cardSetNameParallelWordsDisjoint(
 
   for (const suffix of parallelSuffixes) {
     if (!suffix.trim()) continue;
-    for (const token of tokenizeWords(suffix)) {
-      if (setTokens.has(token.toLowerCase())) return false;
-    }
+    const leadingToken = tokenizeWords(suffix)[0];
+    if (leadingToken && setTokens.has(leadingToken.toLowerCase())) return false;
   }
 
   return true;
@@ -1020,6 +1119,9 @@ export function suffixesFormParallelFamily(suffixes: string[]): boolean {
 }
 
 function parallelSuffixesHaveInvalidHierarchy(suffixes: string[]): boolean {
+  const hasEmpty = suffixes.some((suffix) => !suffix.trim());
+  if (hasEmpty) return false;
+
   const nonEmpty = suffixes.map((suffix) => suffix.trim()).filter(Boolean);
   if (nonEmpty.length < 2) return false;
 

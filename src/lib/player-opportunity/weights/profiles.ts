@@ -9,12 +9,12 @@ import type { OpportunityThresholds } from "@/types/player-opportunity";
 export const DEFAULT_PLAYER_OPPORTUNITY_WEIGHTS: PlayerOpportunityWeightProfile = {
   id: "default",
   label: "Default",
-  playerQuality: 0.3,
+  playerQuality: 0.28,
   futureOutlook: 0.2,
-  demand: 0.2,
-  sportMarket: 0.15,
-  momentum: 0.1,
-  catalysts: 0.05,
+  demand: 0.18,
+  sportMarket: 0.12,
+  momentum: 0.12,
+  catalysts: 0.1,
 };
 
 const LIFECYCLE_PLAYER_WEIGHTS: Record<
@@ -25,11 +25,11 @@ const LIFECYCLE_PLAYER_WEIGHTS: Record<
     ...DEFAULT_PLAYER_OPPORTUNITY_WEIGHTS,
     id: "prospect",
     label: "Prospect",
-    playerQuality: 0.2,
+    playerQuality: 0.18,
     futureOutlook: 0.25,
-    demand: 0.25,
+    demand: 0.22,
     momentum: 0.15,
-    catalysts: 0.05,
+    catalysts: 0.1,
     sportMarket: 0.1,
   },
   active: DEFAULT_PLAYER_OPPORTUNITY_WEIGHTS,
@@ -57,16 +57,17 @@ const LIFECYCLE_PLAYER_WEIGHTS: Record<
   },
 };
 
+/** Frozen after validation-split calibration. Holdout is not used to fit these. */
 export const DEFAULT_PLAYER_CARD_WEIGHTS: PlayerCardOpportunityWeightProfile = {
-  id: "default",
-  label: "Default",
-  playerOpportunity: 0.25,
-  valuation: 0.25,
-  scarcity: 0.15,
-  demand: 0.1,
-  expectedReturn: 0.1,
+  id: "calibrated-v2",
+  label: "Calibrated v2",
+  playerOpportunity: 0.2,
+  valuation: 0.24,
+  scarcity: 0.14,
+  demand: 0.08,
+  expectedReturn: 0.16,
   riskAdjustedReturn: 0.1,
-  liquidity: 0.05,
+  liquidity: 0.08,
 };
 
 const VINTAGE_PLAYER_CARD_WEIGHTS: PlayerCardOpportunityWeightProfile = {
@@ -113,7 +114,7 @@ export function resolvePlayerCardOpportunityWeights(input: {
   archetype: CardArchetype;
   lifecycle: PlayerOpportunityLifecycle;
 }): PlayerCardOpportunityWeightProfile {
-  if (input.era === "vintage") return VINTAGE_PLAYER_CARD_WEIGHTS;
+  if (input.era === "pre_war" || input.era === "vintage") return VINTAGE_PLAYER_CARD_WEIGHTS;
   if (input.era === "ultra_modern") return ULTRA_MODERN_PLAYER_CARD_WEIGHTS;
   if (input.archetype === "rookie" && input.lifecycle === "prospect") {
     return {
@@ -137,6 +138,34 @@ export function recommendationFromScore(
   if (score >= thresholds.hold) return "hold";
   if (score >= thresholds.sell) return "sell";
   return "strong_sell";
+}
+
+export function constrainRecommendation(
+  recommendation: import("@/types/player-opportunity").PlayerCardRecommendation,
+  input: {
+    confidenceScore: number;
+    priceToFairValueRatio: number;
+    marginOfSafety: number;
+    sportBear?: boolean;
+  }
+): import("@/types/player-opportunity").PlayerCardRecommendation {
+  let next = recommendation;
+
+  if (input.confidenceScore < 50 && (next === "strong_buy" || next === "strong_sell")) {
+    next = next === "strong_buy" ? "buy" : "sell";
+  }
+  if (input.confidenceScore < 35 && (next === "buy" || next === "sell")) {
+    next = "hold";
+  }
+  if (input.priceToFairValueRatio > 1.15 && (next === "buy" || next === "strong_buy")) {
+    next = "hold";
+  }
+  if (input.marginOfSafety > 20 && (next === "sell" || next === "strong_sell")) {
+    next = "hold";
+  }
+
+  void input.sportBear;
+  return next;
 }
 
 export function listPlayerOpportunityWeightProfiles(): PlayerOpportunityWeightProfile[] {

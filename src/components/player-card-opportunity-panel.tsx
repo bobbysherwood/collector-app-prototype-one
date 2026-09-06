@@ -109,7 +109,15 @@ const CARD_METRIC_DESCRIPTIONS = {
   marginOfSafety:
     "Discount (positive) or premium (negative) versus estimated fair market value. Higher margin of safety means more room for error.",
   currentMarketValue:
-    "Most recent comparable sale or current market price used for mispricing analysis.",
+    "Latest in-window sale, or the 7-day median when several recent prints exist. Not the first sale in the array.",
+  permanentLossRisk:
+    "Risk of permanent capital loss from overpaying, illiquidity, population growth, and player risk.",
+  playerRisk:
+    "Player-level risk from lifecycle, injury, and missing inputs. Separate from card price risk.",
+  volatility:
+    "How much this card's observed prices have moved recently.",
+  uncertainty:
+    "How incomplete the inputs are. Higher when confidence is low.",
   fairMarketValue:
     "Estimated fair market value from recent comparable sales and the valuation model.",
   expectedValue90d:
@@ -540,6 +548,29 @@ export function PlayerCardOpportunityPanel({ cardId }: { cardId: string }) {
                   label="Liquidity"
                   description={CARD_METRIC_DESCRIPTIONS.liquidity}
                   value={cardOpportunity.liquidityScore}
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <ScoreTile
+                  label="Permanent-loss risk"
+                  description={CARD_METRIC_DESCRIPTIONS.permanentLossRisk}
+                  value={cardOpportunity.riskScore}
+                />
+                <ScoreTile
+                  label="Player risk"
+                  description={CARD_METRIC_DESCRIPTIONS.playerRisk}
+                  value={cardOpportunity.playerRiskScore}
+                />
+                <ScoreTile
+                  label="Volatility"
+                  description={CARD_METRIC_DESCRIPTIONS.volatility}
+                  value={cardOpportunity.volatilityScore}
+                />
+                <ScoreTile
+                  label="Uncertainty"
+                  description={CARD_METRIC_DESCRIPTIONS.uncertainty}
+                  value={cardOpportunity.uncertaintyScore}
                 />
               </div>
 

@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  AddCardPsaCertLookup,
+  type PsaCertContinuePayload,
+} from "@/components/add-card-psa-cert-lookup";
 import { Button } from "@/components/ui/button";
 import { Dm2CardSearchInput } from "@/components/dm2-card-search-input";
 import type { Dm2CardSearchResult } from "@/types/data-model-v2";
@@ -7,11 +11,13 @@ import type { Dm2CardSearchResult } from "@/types/data-model-v2";
 interface AddCardSearchStepProps {
   onSelectCard: (card: Dm2CardSearchResult) => void;
   onAddManually: () => void;
+  onContinueFromPsa: (payload: PsaCertContinuePayload) => void;
 }
 
 export function AddCardSearchStep({
   onSelectCard,
   onAddManually,
+  onContinueFromPsa,
 }: AddCardSearchStepProps) {
   return (
     <div className="space-y-6">
@@ -35,6 +41,7 @@ export function AddCardSearchStep({
           </div>
         }
       />
+      <AddCardPsaCertLookup onContinue={onContinueFromPsa} />
       <Button type="button" variant="outline" onClick={onAddManually}>
         Add manually
       </Button>

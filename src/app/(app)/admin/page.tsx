@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AdminScreen } from "@/components/admin-screen";
 import { AdminSectionContent } from "@/components/admin-section-content";
 import { AdminSectionSkeleton } from "@/components/admin-section-skeleton";
-import { parseAdminSection } from "@/lib/admin-sections";
+import { parseAdminSection, type AdminSection } from "@/lib/admin-sections";
 import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
 
@@ -26,8 +26,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         key={activeSection}
         fallback={<AdminSectionSkeleton section={activeSection} />}
       >
-        <AdminSectionContent section={activeSection} />
+        <AdminSectionSlot section={activeSection} />
       </Suspense>
     </AdminScreen>
   );
+}
+
+async function AdminSectionSlot({ section }: { section: AdminSection }) {
+  return <AdminSectionContent section={section} />;
 }

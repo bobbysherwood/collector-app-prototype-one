@@ -1,13 +1,16 @@
 import { computePlayerLegacyScore } from "@/lib/card-investment/player/player-legacy-model";
-import { computeCardValuation } from "@/lib/card-investment/valuation/card-valuation-model";
 import { resolveWeightProfile } from "@/lib/card-investment/weights/profiles";
-import { computePlayerOpportunityExplanation } from "@/lib/player-opportunity/explainability";
+import {
+  computePlayerOpportunityExplanation,
+  driversFromComponentScores,
+} from "@/lib/player-opportunity/explainability";
 import {
   catalystImpactScore,
   expectedDemandChange90d,
   playerRiskScore,
   scoreFutureOutlook,
   scorePlayerDemand,
+  scorePlayerMomentum,
   scorePlayerQuality,
   scoreSportMarketContext,
   trendFromExpectedChange,
@@ -96,10 +99,30 @@ export function computePlayerOpportunity(
   const weights = resolvePlayerOpportunityWeights(context.lifecycle);
   const catalysts = buildCatalysts(context);
 
-  const quality = enrichQualityFromLegacy(context, cardContext);
-  const futureOutlookScore = scoreFutureOutlook(context.lifecycle);
+  const profile = context.playerProfile;
+  const qualitySignals = {
+    ...context.qualitySignals,
+    availableFieldCount: context.qualitySignals?.availableFieldCount ?? 0,
+    injuryRisk:
+      context.qualitySignals?.injuryRisk ??
+      profile?.injuryRisk ??
+      (profile?.injuryStatus === "injured" ? 75 : profile?.injuryStatus === "healthy" ? 10 : null),
+  };
+  const quality = enrichQualityFromLegacy({ ...context, qualitySignals }, cardContext);
+  const asOfYear = new Date(context.asOf).getFullYear();
+  const playerAgeYears = profile?.birthYear != null ? asOfYear - profile.birthYear : undefined;
+  const cardYear = context.cardYear;
+  const cardAgeYears = cardYear != null ? asOfYear - cardYear : undefined;
+  const futureOutlookScore = scoreFutureOutlook(context.lifecycle, qualitySignals, {
+    cardAgeYears: playerAgeYears ?? cardAgeYears,
+  });
   const demand = scorePlayerDemand(context.demandSignals);
   const sport = scoreSportMarketContext(context.sportMarket);
+  const momentumScore = scorePlayerMomentum(
+    context.demandSignals,
+    qualitySignals,
+    context.sportMarket
+  );
   const catalystScore = catalystImpactScore(catalysts);
 
   const confidencePenalty =
@@ -111,14 +134,14 @@ export function computePlayerOpportunity(
       futureOutlookScore,
       demandScore: demand.score,
       sportMarketScore: sport.score,
-      momentumScore: sport.momentumScore,
+      momentumScore,
       catalystScore,
     },
     weights
   );
 
   const demandChange90d = expectedDemandChange90d({
-    momentumScore: sport.momentumScore,
+    momentumScore,
     demandScore: demand.score,
     sportMarket: context.sportMarket,
     catalysts,
@@ -126,7 +149,7 @@ export function computePlayerOpportunity(
 
   const riskScore = playerRiskScore({
     lifecycle: context.lifecycle,
-    qualitySignals: context.qualitySignals,
+    qualitySignals,
     sportMarket: context.sportMarket,
     confidencePenalty,
   });
@@ -137,39 +160,42 @@ export function computePlayerOpportunity(
 
   const trend = trendFromExpectedChange(demandChange90d);
 
-  const positiveDrivers: string[] = [];
-  const negativeDrivers: string[] = [];
+  const fromScores = driversFromComponentScores(
+    {
+      quality: quality.qualityScore,
+      futureOutlook: futureOutlookScore,
+      demand: demand.score,
+      sportMarket: sport.score,
+      momentum: momentumScore,
+      catalysts: catalystScore,
+    },
+    {
+      quality: "Player quality / legacy",
+      futureOutlook: "Future outlook",
+      demand: "Player demand",
+      sportMarket: "Sport market",
+      momentum: "Player momentum",
+      catalysts: "Catalysts",
+    }
+  );
+  const positiveDrivers = [...fromScores.positiveDrivers];
+  const negativeDrivers = [...fromScores.negativeDrivers];
 
-  if (demand.score >= 60) positiveDrivers.push("Player demand signals are favorable.");
-  if (demand.score <= 40) negativeDrivers.push("Player demand signals are weak.");
   if (demand.attentionScore > 70 && demand.sentimentScore < 45) {
     negativeDrivers.push("High attention is not translating into positive sentiment.");
   }
-  if (sport.momentumScore >= 60) {
-    positiveDrivers.push("Sport market momentum is supportive.");
-  } else if (sport.momentumScore <= 40) {
-    negativeDrivers.push("Sport market momentum is soft.");
-  }
-  if (quality.qualityScore >= 70) positiveDrivers.push("Player quality/legacy profile is strong.");
-  if (context.sportMarket?.provenance.available && context.sportMarket.outlookScore >= 60) {
-    positiveDrivers.push("Basketball market index outlook is bullish.");
+  if (
+    (context.lifecycle === "active" || context.lifecycle === "prospect") &&
+    (qualitySignals.injuryRisk ?? 0) > 50
+  ) {
+    negativeDrivers.push("Injury risk is weighing on the player's future outlook.");
   }
   if (confidenceScore < 45) {
     negativeDrivers.push("Model confidence is reduced due to missing external inputs.");
   }
 
   const computedAt = new Date().toISOString();
-
-  let referenceFairValue: number | null = null;
-  if (cardContext) {
-    const cardWeights = resolveWeightProfile({
-      sport: cardContext.asset.sport,
-      era: cardContext.classification.era,
-      lifecycle: cardContext.classification.lifecycle,
-      archetype: cardContext.classification.archetype,
-    });
-    referenceFairValue = computeCardValuation(cardContext, cardWeights).fairValue;
-  }
+  const referenceFairValue = null;
 
   const explanation = computePlayerOpportunityExplanation({
     opportunityScore,
@@ -192,7 +218,7 @@ export function computePlayerOpportunity(
     futureOutlookScore,
     demandScore: demand.score,
     sportMarketScore: sport.score,
-    momentumScore: sport.momentumScore,
+    momentumScore,
     expectedDemandChange90d: demandChange90d,
     riskScore,
     confidenceScore,

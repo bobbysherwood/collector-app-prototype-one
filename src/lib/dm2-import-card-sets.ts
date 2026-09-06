@@ -325,8 +325,15 @@ export function commitCardSetsReviewStep(
     };
   }
 
+  if (!session.reviewProgress?.playersCommittedAt) {
+    return {
+      error: "Commit the player review step before committing card sets.",
+    };
+  }
+
   const lookupsCommittedAt =
     session.reviewProgress?.lookupsCommittedAt ?? new Date().toISOString();
+  const playersCommittedAt = session.reviewProgress.playersCommittedAt;
 
   const pending = countPendingCardSetGroups(groups, actions);
   if (pending > 0) {
@@ -342,6 +349,7 @@ export function commitCardSetsReviewStep(
       ...reprocessed,
       reviewProgress: {
         lookupsCommittedAt,
+        playersCommittedAt,
         cardSetsCommittedAt: new Date().toISOString(),
       },
     },

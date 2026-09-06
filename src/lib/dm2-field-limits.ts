@@ -1,2 +1,3 @@
 export const DM2_CARD_NUMBER_MAX_LENGTH = 100;
 export const DM2_CARD_PLAYER_MAX_LENGTH = 1000;
+export const DM2_PLAYER_NAME_MAX_LENGTH = 200;

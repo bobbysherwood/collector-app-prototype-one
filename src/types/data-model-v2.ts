@@ -37,6 +37,51 @@ export interface Dm2Parallel {
   createdAt: string;
 }
 
+export interface Dm2Player {
+  id: string;
+  sportId: string;
+  sportName: string;
+  name: string;
+  imagePath: string | null;
+  active: boolean;
+  createdAt: string;
+  birthYear?: number | null;
+  careerStatus?: "prospect" | "active" | "retired" | "deceased" | null;
+  injuryStatus?: "healthy" | "injured" | null;
+  team?: string | null;
+}
+
+export interface Dm2ComparableCandidate {
+  id: string;
+  sportId: string;
+  sportName: string;
+  name: string;
+  imagePath: string | null;
+  birthYear: number | null;
+  careerStatus: Dm2Player["careerStatus"];
+  injuryStatus: Dm2Player["injuryStatus"];
+  team: string | null;
+  cardCount: number;
+}
+
+export interface Dm2PlayerBackfillCandidate {
+  sportId: string;
+  sportLabel: string;
+  name: string;
+  nameKey: string;
+  cardCount: number;
+}
+
+export interface Dm2PlayerReviewPair {
+  sportId: string;
+  sportLabel: string;
+  leftName: string;
+  rightName: string;
+  leftKey: string;
+  rightKey: string;
+  similarity: number;
+}
+
 export interface Dm2Attribute {
   id: string;
   name: string;
@@ -72,6 +117,7 @@ export interface Dm2CardSet {
   cardSetName: string;
   active: boolean;
   createdAt: string;
+  psaHeadingId?: number | null;
 }
 
 export interface Dm2Card {
@@ -80,6 +126,7 @@ export interface Dm2Card {
   cardSetLabel: string;
   cardNumber: string;
   player: string;
+  playerIds: string[];
   parallelId: string | null;
   parallelName: string | null;
   imagePath: string | null;
@@ -104,8 +151,25 @@ export interface Dm2CardSearchResult {
   attributeNames: string[];
 }
 
+export type Dm2CardPopulationStatus = "Exists" | "Not Created";
+
+export interface Dm2CardPopulationSearchResult extends Dm2CardSearchResult {
+  populationStatus: Dm2CardPopulationStatus;
+}
+
+export interface Dm2CardPopulation {
+  cardId: string;
+  counts: Record<string, number | null>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Dm2PlayerSearchResult {
+  id: string;
   player: string;
+  sport: string;
+  sportId: string;
+  imagePath: string | null;
   cardCount: number;
 }
 

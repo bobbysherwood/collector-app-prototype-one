@@ -43,6 +43,9 @@ import type { Dm2ExtractedRow, Dm2ImportIssue, Dm2ImportSession } from "@/types/
 
 const EMPTY_SELECT = "__none__";
 const PAGE_SIZE = 500;
+const PARALLEL_SELECT_TRIGGER_CLASS = "h-8 min-w-[220px] w-full text-xs";
+const PARALLEL_SELECT_CONTENT_CLASS =
+  "w-max min-w-[22rem] overflow-x-visible";
 
 export type CardReviewFilter =
   | "all"
@@ -94,7 +97,7 @@ function ParallelSelectCell({
     >
       <SelectTrigger
         className={cn(
-          "h-8 min-w-[132px] text-xs",
+          PARALLEL_SELECT_TRIGGER_CLASS,
           highlightMissing &&
             !row.parallel?.trim() &&
             "border-amber-500 text-amber-700 dark:text-amber-400"
@@ -102,7 +105,7 @@ function ParallelSelectCell({
       >
         <SelectValue placeholder="Add parallel…" />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent align="start" className={PARALLEL_SELECT_CONTENT_CLASS}>
         <SelectItem value={EMPTY_SELECT}>—</SelectItem>
         {parallelOptions.map((option) => (
           <SelectItem key={option} value={option}>
@@ -187,7 +190,7 @@ function DuplicateBulkParallelPanel({
                   )}
                 </div>
               </div>
-              <div className="flex min-w-[180px] flex-col gap-1">
+              <div className="flex min-w-[220px] flex-col gap-1">
                 <Label className="text-xs">Set parallel for {applyCount} row(s)</Label>
                 <Select
                   value={selectedParallel}
@@ -198,10 +201,10 @@ function DuplicateBulkParallelPanel({
                     }))
                   }
                 >
-                  <SelectTrigger className="h-8 text-xs">
+                  <SelectTrigger className={PARALLEL_SELECT_TRIGGER_CLASS}>
                     <SelectValue placeholder="Choose parallel…" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="start" className={PARALLEL_SELECT_CONTENT_CLASS}>
                     <SelectItem value={EMPTY_SELECT}>—</SelectItem>
                     {clusterParallelOptions.map((option) => (
                       <SelectItem key={option} value={option}>
@@ -317,15 +320,15 @@ function DuplicateIssueGroup({
       </p>
       {rowsShareSetParallel && !resolution && (
         <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/50 p-2 sm:flex-row sm:flex-wrap sm:items-end">
-          <div className="min-w-[180px] space-y-1">
+          <div className="min-w-[220px] space-y-1">
             <Label className="text-xs">
               Apply parallel to all {rows.length} rows in this group
             </Label>
             <Select value={groupParallel} onValueChange={(value) => setGroupParallel(value ?? EMPTY_SELECT)}>
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className={PARALLEL_SELECT_TRIGGER_CLASS}>
                 <SelectValue placeholder="Choose parallel…" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent align="start" className={PARALLEL_SELECT_CONTENT_CLASS}>
                 <SelectItem value={EMPTY_SELECT}>—</SelectItem>
                 {groupParallelOptions.map((option) => (
                   <SelectItem key={option} value={option}>
@@ -635,7 +638,7 @@ export function Dm2ImportReviewCards({
                 <TableHead className="min-w-[72px]">Card #</TableHead>
                 <TableHead className="min-w-[168px]">Player</TableHead>
                 <TableHead className="min-w-[220px]">Card Set</TableHead>
-                <TableHead className="min-w-[132px]">Parallel</TableHead>
+                <TableHead className="min-w-[220px]">Parallel</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

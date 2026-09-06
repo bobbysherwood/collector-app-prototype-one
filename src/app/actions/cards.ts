@@ -10,6 +10,33 @@ import {
   validateCardIdentity,
 } from "@/lib/card-form-identity";
 import { insertInitialValuation } from "@/app/actions/valuations";
+import { resolveDm2PlayerForHoldings } from "@/app/actions/data-model-v2";
+
+function isMissingAssetsPlayerIdColumn(message: string): boolean {
+  return /player_id/i.test(message) && /does not exist/i.test(message);
+}
+
+async function assetFieldsWithCatalogPlayer(data: CardFormData) {
+  const resolved = await resolveDm2PlayerForHoldings({
+    playerId: data.player_id,
+    playerName: data.player_name,
+    sport: data.sport,
+  });
+  if (resolved.error || !resolved.player) {
+    return { error: resolved.error ?? "Select a catalog player." };
+  }
+
+  return {
+    fields: {
+      ...normalizeAssetFieldsFromForm({
+        ...data,
+        player_id: resolved.player.id,
+        player_name: resolved.player.name,
+      }),
+      player_id: resolved.player.id,
+    },
+  };
+}
 
 function validateLotGrading(
   grader: Grader,
@@ -60,18 +87,28 @@ export async function createCard(
     return { error: gradingError };
   }
 
-  const assetFields = normalizeAssetFieldsFromForm(data);
+  const resolvedFields = await assetFieldsWithCatalogPlayer(data);
+  if ("error" in resolvedFields) {
+    return { error: resolvedFields.error };
+  }
   const lotGrading = normalizeLotGrading(data);
   const assetId = crypto.randomUUID();
 
-  const { error: assetError } = await supabase.from("assets").insert({
+  const insertPayload = {
     id: assetId,
     user_id: user.id,
-    ...assetFields,
+    ...resolvedFields.fields,
     image_path: imagePath,
-  });
+  };
+  const { error: assetError } = await supabase.from("assets").insert(insertPayload);
 
-  if (assetError) {
+  if (assetError && isMissingAssetsPlayerIdColumn(assetError.message)) {
+    const { player_id: _ignored, ...withoutPlayerId } = insertPayload;
+    const retry = await supabase.from("assets").insert(withoutPlayerId);
+    if (retry.error) {
+      return { error: retry.error.message };
+    }
+  } else if (assetError) {
     return { error: assetError.message };
   }
 
@@ -142,7 +179,11 @@ export async function updateCard(
     }
   }
 
-  const assetUpdate: Record<string, unknown> = normalizeAssetFieldsFromForm(data);
+  const resolvedFields = await assetFieldsWithCatalogPlayer(data);
+  if ("error" in resolvedFields) {
+    return { error: resolvedFields.error };
+  }
+  const assetUpdate: Record<string, unknown> = { ...resolvedFields.fields };
   if (imagePath !== undefined) {
     assetUpdate.image_path = imagePath;
   }
@@ -153,7 +194,17 @@ export async function updateCard(
     .eq("id", id)
     .eq("user_id", user.id);
 
-  if (assetError) {
+  if (assetError && isMissingAssetsPlayerIdColumn(assetError.message)) {
+    const { player_id: _ignored, ...withoutPlayerId } = assetUpdate;
+    const retry = await supabase
+      .from("assets")
+      .update(withoutPlayerId)
+      .eq("id", id)
+      .eq("user_id", user.id);
+    if (retry.error) {
+      return { error: retry.error.message };
+    }
+  } else if (assetError) {
     return { error: assetError.message };
   }
 

@@ -166,8 +166,46 @@ export interface Dm2ImportFileResult {
 
 export interface Dm2ImportReviewProgress {
   lookupsCommittedAt?: string;
+  playersCommittedAt?: string;
   cardSetsCommittedAt?: string;
   cardsReviewCommittedAt?: string;
+}
+
+export interface Dm2ImportPlayerName {
+  key: string;
+  sportKey: string;
+  sportLabel: string;
+  sportId?: string;
+  name: string;
+  nameKey: string;
+  rowCount: number;
+  exactMatchId?: string;
+  exactMatchName?: string;
+}
+
+export interface Dm2ImportPlayerReviewSide {
+  name: string;
+  nameKey: string;
+  catalogPlayerId?: string;
+}
+
+export interface Dm2ImportPlayerReviewPair {
+  id: string;
+  sportKey: string;
+  sportLabel: string;
+  left: Dm2ImportPlayerReviewSide;
+  right: Dm2ImportPlayerReviewSide;
+  similarity: number;
+}
+
+export type Dm2PlayerPairResolution =
+  | { action: "keep_both" }
+  | { action: "merge"; canonicalSide: "left" | "right" };
+
+export interface Dm2ImportPlayerReview {
+  names: Dm2ImportPlayerName[];
+  pairs: Dm2ImportPlayerReviewPair[];
+  resolutions: Record<string, Dm2PlayerPairResolution>;
 }
 
 export interface Dm2ImportSession {
@@ -185,6 +223,7 @@ export interface Dm2ImportSession {
   catalog?: Dm2ImportCatalogContext;
   reviewProgress?: Dm2ImportReviewProgress;
   duplicateResolutions?: Record<string, Dm2DuplicateResolution>;
+  playerReview?: Dm2ImportPlayerReview;
 }
 
 export type Dm2DuplicateResolutionAction =
@@ -202,6 +241,7 @@ export interface Dm2DuplicateResolution {
 export type Dm2ImportCommitErrorCode =
   | "pre_commit_validation"
   | "lookup_create_failed"
+  | "player_create_failed"
   | "brand_without_manufacturer"
   | "card_set_create_failed"
   | "row_incomplete"
@@ -216,6 +256,7 @@ export type Dm2ImportCommitDuplicateEntityType =
   | "cardSetCategory"
   | "cardSetName"
   | "parallel"
+  | "player"
   | "cardSet"
   | "card";
 
@@ -226,6 +267,7 @@ export interface Dm2ImportCommitAddedStats {
   cardSetCategories: number;
   cardSetNames: number;
   parallels: number;
+  players: number;
   cardSets: number;
   cards: number;
 }
@@ -263,6 +305,7 @@ export interface Dm2ImportCommitResult {
   parallelsCreated?: number;
   cardSetsCreated?: number;
   cardsCreated?: number;
+  playersCreated?: number;
   cardsSkipped?: number;
   cardsFailed?: number;
   warning?: string;
@@ -317,5 +360,18 @@ export interface Dm2ImportCatalogContext {
     cardNumber: string;
     player: string;
     parallelId: string | null;
+  }>;
+  players?: Array<{
+    id: string;
+    sportId: string;
+    name: string;
+    nameKey: string;
+    active: boolean;
+  }>;
+  playerAliases?: Array<{
+    playerId: string;
+    sportId: string;
+    name: string;
+    nameKey: string;
   }>;
 }

@@ -120,7 +120,7 @@ describe("Card Investment Models V1", () => {
 
     const profile = computeInvestmentProfile(context);
 
-    expect(profile.classification.era).toBe("vintage");
+    expect(profile.classification.era).toBe("junk_wax");
     expect(profile.classification.lifecycle).toBe("legacy");
     expect(profile.playerLegacy.score).toBeGreaterThan(80);
     expect(profile.scarcity.tier).not.toBe("common");

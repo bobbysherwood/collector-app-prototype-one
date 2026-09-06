@@ -1,0 +1,18 @@
+{
+  "IsValidRequest": true,
+  "ServerMessage": "Request successful",
+  "PSACert": {
+    "CertNumber": "12345678",
+    "Year": "2018",
+    "YearIssued": "2018",
+    "Brand": "2018 Panini Prizm",
+    "Category": "Football Cards",
+    "CardNumber": "201",
+    "Subject": "Patrick Mahomes",
+    "Variety": "Silver",
+    "CardGrade": "GEM MT 10",
+    "GradeDescription": "GEM MT 10",
+    "TotalPopulation": null,
+    "PopulationHigher": null
+  }
+}

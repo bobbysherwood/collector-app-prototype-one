@@ -8,6 +8,14 @@ const LISTINGS_CACHE_TIMEZONE =
 
 const CACHE_QUERY_ENV_PREFIX = /^env:(sandbox|production)\|/;
 
+/** Cache rows are keyed by `assets.id` (uuid). Catalog research uses `dm2:{uuid}`. */
+const ASSET_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isEbayListingsCacheAssetId(assetId: string): boolean {
+  return ASSET_UUID_RE.test(assetId);
+}
+
 interface EbayListingsCacheRow {
   asset_id: string;
   listings: MarketListing[];
@@ -77,6 +85,8 @@ export function isListingsCacheFreshForToday(
 export async function getCachedEbayListings(
   assetId: string
 ): Promise<CachedEbayListings | null> {
+  if (!isEbayListingsCacheAssetId(assetId)) return null;
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("ebay_listings_cache")
@@ -115,6 +125,8 @@ export async function upsertCachedEbayListings(input: {
   listings: MarketListing[];
   searchQuery: string;
 }): Promise<string | null> {
+  if (!isEbayListingsCacheAssetId(input.assetId)) return null;
+
   const supabase = await createClient();
   const fetchedAt = new Date().toISOString();
   const { error } = await supabase.from("ebay_listings_cache").upsert(

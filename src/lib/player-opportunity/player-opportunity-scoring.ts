@@ -42,7 +42,9 @@ export function scorePlayerQuality(
   return { score: clampScore(score), confidencePenalty };
 }
 
-export function scoreFutureOutlook(lifecycle: PlayerOpportunityContext["lifecycle"]): number {
+export function lifecycleOutlookBaseline(
+  lifecycle: PlayerOpportunityContext["lifecycle"]
+): number {
   switch (lifecycle) {
     case "prospect":
       return 72;
@@ -55,6 +57,63 @@ export function scoreFutureOutlook(lifecycle: PlayerOpportunityContext["lifecycl
     default:
       return 50;
   }
+}
+
+export function scoreFutureOutlook(
+  lifecycle: PlayerOpportunityContext["lifecycle"],
+  qualitySignals?: PlayerQualitySignals,
+  options?: { cardAgeYears?: number }
+): number {
+  let score = lifecycleOutlookBaseline(lifecycle);
+  const active = lifecycle === "prospect" || lifecycle === "active";
+
+  if (qualitySignals?.careerStrength != null) {
+    score += (qualitySignals.careerStrength - 50) * (active ? 0.25 : 0.08);
+  }
+
+  if (active && qualitySignals?.injuryRisk != null) {
+    score -= qualitySignals.injuryRisk * 0.3;
+  }
+
+  if (active && options?.cardAgeYears != null) {
+    if (options.cardAgeYears <= 3) score += 6;
+    else if (options.cardAgeYears >= 15) score -= 8;
+    else if (options.cardAgeYears >= 10) score -= 4;
+  }
+
+  return clampScore(score);
+}
+
+export function scorePlayerMomentum(
+  demandSignals: PlayerDemandSignals | undefined,
+  qualitySignals: PlayerQualitySignals | undefined,
+  sportMarket: SportMarketSnapshot | null
+): number {
+  const parts: Array<{ value: number; weight: number }> = [];
+
+  if (demandSignals && demandSignals.sourceCount > 0) {
+    if (demandSignals.discussionGrowthScore != null) {
+      parts.push({ value: demandSignals.discussionGrowthScore, weight: 0.4 });
+    }
+    if (demandSignals.searchInterestScore != null) {
+      parts.push({ value: demandSignals.searchInterestScore, weight: 0.3 });
+    }
+  }
+
+  if (qualitySignals?.careerStrength != null) {
+    parts.push({ value: qualitySignals.careerStrength, weight: 0.15 });
+  }
+
+  if (sportMarket?.provenance.available) {
+    parts.push({ value: sportMarket.momentumScore, weight: 0.15 });
+  }
+
+  if (parts.length === 0) return 50;
+
+  const total = parts.reduce((sum, part) => sum + part.weight, 0);
+  return clampScore(
+    parts.reduce((sum, part) => sum + part.value * part.weight, 0) / total
+  );
 }
 
 export function scorePlayerDemand(signals: PlayerDemandSignals | undefined): {

@@ -8,8 +8,10 @@ import {
 import type { Asset } from "@/types/asset";
 import type { SportMarketSnapshot } from "@/types/card-investment";
 import type {
+  OpportunityCatalyst,
   PlayerDemandSignals,
   PlayerOpportunityContext,
+  PlayerProfileSignals,
   PlayerQualitySignals,
 } from "@/types/player-opportunity";
 
@@ -18,6 +20,19 @@ export interface BuildPlayerContextOptions {
   sportMarketOverride?: SportMarketSnapshot | null;
   qualitySignals?: PlayerQualitySignals;
   demandSignals?: PlayerDemandSignals;
+  playerProfile?: PlayerProfileSignals;
+  catalysts?: OpportunityCatalyst[];
+}
+
+function emptyQualitySignals(notes: string[]): PlayerQualitySignals {
+  return {
+    careerStrength: null,
+    legacyStrength: null,
+    culturalRelevance: null,
+    injuryRisk: null,
+    availableFieldCount: 0,
+    provenanceNotes: notes,
+  };
 }
 
 function defaultQualitySignals(asset: Asset): PlayerQualitySignals {
@@ -25,16 +40,28 @@ function defaultQualitySignals(asset: Asset): PlayerQualitySignals {
   const hasLegacyName = ["jordan", "lebron", "kobe", "magic", "bird"].some((n) =>
     player.includes(n)
   );
-  return {
-    careerStrength: hasLegacyName ? 85 : null,
-    legacyStrength: hasLegacyName ? 90 : null,
-    culturalRelevance: hasLegacyName ? 88 : null,
-    injuryRisk: null,
-    availableFieldCount: hasLegacyName ? 3 : 0,
-    provenanceNotes: hasLegacyName
-      ? ["Legacy tier inferred from player name heuristics"]
-      : ["No external player stats connected in V1"],
-  };
+  if (hasLegacyName) {
+    return {
+      careerStrength: 85,
+      legacyStrength: 90,
+      culturalRelevance: 88,
+      injuryRisk: null,
+      availableFieldCount: 3,
+      provenanceNotes: ["Legacy tier inferred from player name heuristics"],
+    };
+  }
+  return emptyQualitySignals(["No live player-stats signals available"]);
+}
+
+function lifecycleFromIdentity(
+  profile: PlayerProfileSignals | undefined,
+  asOfYear: number
+): PlayerOpportunityContext["lifecycle"] {
+  if (profile?.careerStatus) return profile.careerStatus;
+  if (profile?.birthYear != null && asOfYear - profile.birthYear <= 21) {
+    return "prospect";
+  }
+  return "active";
 }
 
 function defaultDemandSignals(): PlayerDemandSignals {
@@ -53,8 +80,14 @@ export async function buildPlayerOpportunityContext(
   options: BuildPlayerContextOptions = {}
 ): Promise<PlayerOpportunityContext> {
   const asOf = options.asOf ?? new Date().toISOString();
-  const cardLifecycle = classifyPlayerLifecycle(asset);
-  const lifecycle = classifyPlayerOpportunityLifecycle(asset, cardLifecycle);
+  const asOfYear = new Date(asOf).getFullYear();
+  const cardLifecycle = classifyPlayerLifecycle(asset, asOfYear);
+  const lifecycle = classifyPlayerOpportunityLifecycle(
+    asset,
+    cardLifecycle,
+    asOfYear,
+    options.playerProfile
+  );
 
   const sportMarket =
     options.sportMarketOverride !== undefined
@@ -67,9 +100,12 @@ export async function buildPlayerOpportunityContext(
     sport: asset.sport,
     lifecycle,
     asOf,
+    cardYear: asset.year,
+    playerProfile: options.playerProfile,
     sportMarket,
     qualitySignals: options.qualitySignals ?? defaultQualitySignals(asset),
     demandSignals: options.demandSignals ?? defaultDemandSignals(),
+    catalysts: options.catalysts,
   };
 }
 
@@ -82,13 +118,47 @@ export async function buildPlayerOpportunityContextByAssetId(
   return buildPlayerOpportunityContext(asset, options);
 }
 
+export function buildPlayerOpportunityContextFromIdentity(input: {
+  playerName: string;
+  sport: string;
+  asOf?: string;
+  playerProfile?: PlayerProfileSignals;
+  qualitySignals?: PlayerQualitySignals;
+  demandSignals?: PlayerDemandSignals;
+  catalysts?: OpportunityCatalyst[];
+  sportMarket?: SportMarketSnapshot | null;
+}): PlayerOpportunityContext {
+  const asOf = input.asOf ?? new Date().toISOString();
+  const asOfYear = new Date(asOf).getFullYear();
+  return {
+    playerId: buildPlayerId(input.playerName, input.sport),
+    playerName: input.playerName,
+    sport: input.sport,
+    lifecycle: lifecycleFromIdentity(input.playerProfile, asOfYear),
+    asOf,
+    playerProfile: input.playerProfile,
+    sportMarket: input.sportMarket ?? null,
+    qualitySignals:
+      input.qualitySignals ??
+      emptyQualitySignals(["No live player-stats signals available"]),
+    demandSignals: input.demandSignals ?? defaultDemandSignals(),
+    catalysts: input.catalysts,
+  };
+}
+
 export function buildPlayerOpportunityContextSync(
   asset: Asset,
   options: BuildPlayerContextOptions = {}
 ): PlayerOpportunityContext {
   const asOf = options.asOf ?? new Date().toISOString();
-  const cardLifecycle = classifyPlayerLifecycle(asset);
-  const lifecycle = classifyPlayerOpportunityLifecycle(asset, cardLifecycle);
+  const asOfYear = new Date(asOf).getFullYear();
+  const cardLifecycle = classifyPlayerLifecycle(asset, asOfYear);
+  const lifecycle = classifyPlayerOpportunityLifecycle(
+    asset,
+    cardLifecycle,
+    asOfYear,
+    options.playerProfile
+  );
 
   return {
     playerId: buildPlayerId(asset.player_name, asset.sport),
@@ -96,8 +166,11 @@ export function buildPlayerOpportunityContextSync(
     sport: asset.sport,
     lifecycle,
     asOf,
+    cardYear: asset.year,
+    playerProfile: options.playerProfile,
     sportMarket: options.sportMarketOverride ?? null,
     qualitySignals: options.qualitySignals ?? defaultQualitySignals(asset),
     demandSignals: options.demandSignals ?? defaultDemandSignals(),
+    catalysts: options.catalysts,
   };
 }

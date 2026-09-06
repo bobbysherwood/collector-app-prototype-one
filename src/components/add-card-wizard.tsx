@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { PsaCertContinuePayload } from "@/components/add-card-psa-cert-lookup";
 import { AddCardSearchStep } from "@/components/add-card-search-step";
 import { CardForm } from "@/components/card-form";
 import { dm2CardToFormPrefill, formatDm2CardLabel } from "@/lib/dm2-card-to-asset";
@@ -15,16 +16,26 @@ export function AddCardWizard({ dm2Lookups }: { dm2Lookups: Dm2CardFormLookups }
     undefined
   );
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [lockGrading, setLockGrading] = useState(false);
 
   function handleSelectCard(card: Dm2CardSearchResult) {
     setInitialForm(dm2CardToFormPrefill(card));
     setSelectedLabel(formatDm2CardLabel(card));
+    setLockGrading(false);
+    setStep("form");
+  }
+
+  function handleContinueFromPsa(payload: PsaCertContinuePayload) {
+    setInitialForm(payload.form);
+    setSelectedLabel(payload.label);
+    setLockGrading(true);
     setStep("form");
   }
 
   function handleAddManually() {
     setInitialForm(undefined);
     setSelectedLabel(null);
+    setLockGrading(false);
     setStep("form");
   }
 
@@ -38,13 +49,14 @@ export function AddCardWizard({ dm2Lookups }: { dm2Lookups: Dm2CardFormLookups }
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Add Card</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Search the card catalog or add manually
+            Search the catalog, look up a PSA cert, or add manually
           </p>
         </div>
 
         <AddCardSearchStep
           onSelectCard={handleSelectCard}
           onAddManually={handleAddManually}
+          onContinueFromPsa={handleContinueFromPsa}
         />
       </div>
     );
@@ -56,7 +68,9 @@ export function AddCardWizard({ dm2Lookups }: { dm2Lookups: Dm2CardFormLookups }
         <h1 className="text-2xl font-semibold tracking-tight">Add Card</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {selectedLabel
-            ? `Adding ${selectedLabel} — complete grading and acquisition details`
+            ? lockGrading
+              ? `Adding ${selectedLabel} — complete identity if needed, then purchase details`
+              : `Adding ${selectedLabel} — complete grading and acquisition details`
             : "Record a new card in your portfolio"}
         </p>
       </div>
@@ -66,6 +80,7 @@ export function AddCardWizard({ dm2Lookups }: { dm2Lookups: Dm2CardFormLookups }
         initialForm={initialForm}
         onBackToSearch={handleBackToSearch}
         dm2Lookups={dm2Lookups}
+        lockGrading={lockGrading}
       />
     </div>
   );

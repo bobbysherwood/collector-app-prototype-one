@@ -49,6 +49,7 @@ function addedRows(result: Dm2ImportCommitResult) {
     { label: "Card set categories", count: added.cardSetCategories },
     { label: "Card set names", count: added.cardSetNames },
     { label: "Parallels", count: added.parallels },
+    { label: "Players", count: added.players ?? 0 },
     { label: "Card sets", count: added.cardSets },
     { label: "Cards", count: added.cards },
   ].filter((row) => row.count > 0);

@@ -18,10 +18,13 @@ const LEGACY_PLAYERS = new Set(
 
 const RISING_KEYWORDS = ["wembanyama", "holmgren", "banchero", "cunningham"];
 
-export function classifyPlayerLifecycle(asset: Asset): PlayerLifecycleStage {
+export function classifyPlayerLifecycle(
+  asset: Asset,
+  asOfYear = new Date().getFullYear()
+): PlayerLifecycleStage {
   const player = asset.player_name.toLowerCase();
   const cardType = asset.card_type.toLowerCase();
-  const age = new Date().getFullYear() - asset.year;
+  const age = asOfYear - asset.year;
 
   if (LEGACY_PLAYERS.has(player)) {
     return "legacy";

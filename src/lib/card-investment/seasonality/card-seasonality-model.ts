@@ -1,3 +1,4 @@
+import { eraSeasonalSensitivity } from "@/lib/card-investment/classification/card-era";
 import {
   availableProvenance,
   unavailableProvenance,
@@ -10,6 +11,17 @@ import type {
   SeasonalityForecast,
   ValuationFactor,
 } from "@/types/card-investment";
+
+export function nbaCalendarModifier(asOf: string): number {
+  const month = new Date(asOf).getUTCMonth() + 1;
+  if (month === 8) return 0;
+  if (month === 9) return 2;
+  if (month === 10) return 4;
+  if (month >= 11 || month <= 3) return 3;
+  if (month === 4) return 5;
+  if (month === 5 || month === 6) return 8;
+  return 1;
+}
 
 function nbaCatalysts(phase: string, asOf: string): Catalyst[] {
   const catalysts: Catalyst[] = [];
@@ -54,7 +66,6 @@ function nbaCatalysts(phase: string, asOf: string): Catalyst[] {
     });
   }
 
-  void asOf;
   return catalysts;
 }
 
@@ -85,12 +96,22 @@ export function computeSeasonalityForecast(
   else if (phase === "draft") modifier = weights.seasonality.draft;
   else if (phase === "offseason") modifier = weights.seasonality.offseason;
 
-  const score = clampScore(50 * modifier + (sport.momentumScore - 50) * 0.2);
+  const eraScale = eraSeasonalSensitivity(context.classification.era);
+  const calendarAdj = nbaCalendarModifier(context.asOf) * eraScale;
+  const score = clampScore(
+    50 * modifier + (sport.momentumScore - 50) * 0.2 + calendarAdj
+  );
   factors.push({
     key: "season_phase",
     label: `NBA season phase: ${phase}`,
     impact: Math.abs(score - 50),
     direction: score >= 50 ? "positive" : "negative",
+  });
+  factors.push({
+    key: "calendar",
+    label: `Calendar overlay scaled by ${context.classification.era}`,
+    impact: Math.abs(calendarAdj),
+    direction: calendarAdj >= 0 ? "positive" : "negative",
   });
 
   return {

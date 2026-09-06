@@ -2,7 +2,7 @@ import type { Asset } from "@/types/asset";
 import type { CardArchetype } from "@/types/card-investment";
 import { classifyPlayerLifecycle } from "@/lib/card-investment/classification/player-lifecycle";
 
-export function classifyCardArchetype(asset: Asset): CardArchetype {
+export function classifyCardArchetype(asset: Asset, asOfYear?: number): CardArchetype {
   const cardType = asset.card_type.toLowerCase();
   const parallel = (asset.insert_parallel ?? "").toLowerCase();
 
@@ -30,7 +30,7 @@ export function classifyCardArchetype(asset: Asset): CardArchetype {
     return "parallel";
   }
 
-  if (classifyPlayerLifecycle(asset) === "legacy") {
+  if (classifyPlayerLifecycle(asset, asOfYear) === "legacy") {
     return "hof_legacy";
   }
 

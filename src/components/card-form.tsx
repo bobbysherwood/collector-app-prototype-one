@@ -30,6 +30,7 @@ import { mergeGradeOption, mergePickListOption } from "@/lib/pick-list-utils";
 import { usePickLists } from "@/components/pick-lists-provider";
 import type { CardFormData, Grader, Sport } from "@/types/card";
 import type { Dm2CardFormLookups } from "@/types/data-model-v2";
+import { HoldingsPlayerPicker } from "@/components/holdings-player-picker";
 
 const PARALLEL_NONE = "__none__";
 
@@ -40,10 +41,12 @@ interface CardFormProps {
   initialForm?: Partial<CardFormData>;
   onBackToSearch?: () => void;
   dm2Lookups: Dm2CardFormLookups;
+  lockGrading?: boolean;
 }
 
 const emptyForm: CardFormData = {
   player_name: "",
+  player_id: null,
   year: new Date().getFullYear(),
   sport: "Baseball",
   manufacturer: "",
@@ -68,6 +71,7 @@ export function CardForm({
   initialForm,
   onBackToSearch,
   dm2Lookups,
+  lockGrading = false,
 }: CardFormProps) {
   const router = useRouter();
   const pickLists = usePickLists();
@@ -277,12 +281,17 @@ export function CardForm({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="player_name">Player *</Label>
-                <Input
-                  id="player_name"
-                  required
-                  value={form.player_name}
-                  onChange={(e) => updateField("player_name", e.target.value)}
-                  placeholder="e.g. Shohei Ohtani"
+                <HoldingsPlayerPicker
+                  sport={form.sport}
+                  playerId={form.player_id}
+                  playerName={form.player_name}
+                  onChange={(next) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      player_id: next.playerId,
+                      player_name: next.playerName,
+                    }))
+                  }
                 />
               </div>
 
@@ -305,7 +314,14 @@ export function CardForm({
                 <Label>Sport *</Label>
                 <Select
                   value={form.sport}
-                  onValueChange={(v) => v && updateField("sport", v as Sport)}
+                  onValueChange={(v) => {
+                    if (!v) return;
+                    setForm((prev) => ({
+                      ...prev,
+                      sport: v as Sport,
+                      player_id: prev.sport === v ? prev.player_id : null,
+                    }));
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -467,53 +483,66 @@ export function CardForm({
             <>
               <div className="rounded-lg border border-border p-4 space-y-4">
                 <h3 className="text-sm font-medium">Grading</h3>
+                {lockGrading && (
+                  <p className="text-sm text-muted-foreground">
+                    Grading is locked from the PSA cert lookup.
+                  </p>
+                )}
                 <div className="space-y-4">
                   <div className="space-y-2 sm:max-w-xs">
                     <Label>Grader *</Label>
-                    <Select
-                      value={form.grader}
-                      onValueChange={(v) => {
-                        if (!v) return;
-                        updateField("grader", v as Grader);
-                        if (!isGradedGrader(v as Grader)) {
-                          updateField("grade", "");
-                          updateField("cert_number", "");
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {graderOptions.map((g) => (
-                          <SelectItem key={g} value={g}>
-                            {g}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {lockGrading ? (
+                      <Input value={form.grader} disabled readOnly />
+                    ) : (
+                      <Select
+                        value={form.grader}
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          updateField("grader", v as Grader);
+                          if (!isGradedGrader(v as Grader)) {
+                            updateField("grade", "");
+                            updateField("cert_number", "");
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {graderOptions.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {g}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
 
                   {isGraded && (
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Grade *</Label>
-                        <Select
-                          value={form.grade}
-                          onValueChange={(v) => v && updateField("grade", v)}
-                          required
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select grade" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {gradeOptions.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {lockGrading ? (
+                          <Input value={form.grade} disabled readOnly />
+                        ) : (
+                          <Select
+                            value={form.grade}
+                            onValueChange={(v) => v && updateField("grade", v)}
+                            required
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select grade" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {gradeOptions.map((g) => (
+                                <SelectItem key={g} value={g}>
+                                  {g}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -526,6 +555,8 @@ export function CardForm({
                           }
                           placeholder="e.g. 12345678"
                           required
+                          disabled={lockGrading}
+                          readOnly={lockGrading}
                         />
                       </div>
                     </div>

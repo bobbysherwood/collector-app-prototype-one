@@ -5,8 +5,10 @@ import { computeScarcityScore } from "@/lib/card-investment/scarcity/card-scarci
 import { computeSeasonalityForecast } from "@/lib/card-investment/seasonality/card-seasonality-model";
 import { clampScore, roundCurrency } from "@/lib/card-investment/types/math";
 import { computeCardValuation } from "@/lib/card-investment/valuation/card-valuation-model";
+import { currentMarketValueFromSales } from "@/lib/card-investment/valuation/current-price";
 import { resolveWeightProfile } from "@/lib/card-investment/weights/profiles";
 import { classifyPlayerOpportunityLifecycle } from "@/lib/player-opportunity/classification/lifecycle";
+import { driversFromComponentScores } from "@/lib/player-opportunity/explainability";
 import { computePlayerCardOpportunityExplanation } from "@/lib/player-card-opportunity/explainability";
 import {
   computeMispricing,
@@ -14,6 +16,7 @@ import {
 } from "@/lib/player-card-opportunity/mispricing";
 import {
   DEFAULT_OPPORTUNITY_THRESHOLDS,
+  constrainRecommendation,
   recommendationFromScore,
   resolvePlayerCardOpportunityWeights,
 } from "@/lib/player-opportunity/weights/profiles";
@@ -32,27 +35,44 @@ export interface PlayerCardOpportunityInput {
 
 function riskAdjustedReturnScore(
   expectedReturn90d: number,
-  riskScore: number,
+  permanentLossRisk: number,
   volatilityScore: number
 ): number {
-  const penalty = riskScore * 0.35 + volatilityScore * 0.15;
+  const penalty = permanentLossRisk * 0.35 + volatilityScore * 0.15;
   return clampScore(50 + expectedReturn90d * 2 - penalty * 0.3);
 }
 
 function applyRiskConfidenceConstraints(
   rawScore: number,
-  riskScore: number,
+  permanentLossRisk: number,
   confidenceScore: number
 ): number {
   let score = rawScore;
 
-  if (riskScore >= 75) score *= 0.75;
-  else if (riskScore >= 60) score *= 0.88;
+  if (permanentLossRisk >= 75) score *= 0.75;
+  else if (permanentLossRisk >= 60) score *= 0.88;
 
   if (confidenceScore < 35) score *= 0.7;
   else if (confidenceScore < 50) score *= 0.85;
 
   return clampScore(score);
+}
+
+function permanentLossRiskScore(input: {
+  playerRisk: number;
+  priceToFairValueRatio: number;
+  liquidityScore: number;
+  populationGrowthPct: number;
+}): number {
+  const overpayRisk =
+    input.priceToFairValueRatio > 1
+      ? clampScore((input.priceToFairValueRatio - 1) * 100)
+      : 0;
+  const illiquidityRisk = clampScore(100 - input.liquidityScore);
+  const popGrowthRisk = clampScore(input.populationGrowthPct * 3);
+  return clampScore(
+    input.playerRisk * 0.4 + overpayRisk * 0.25 + illiquidityRisk * 0.2 + popGrowthRisk * 0.15
+  );
 }
 
 export function computePlayerCardOpportunity(
@@ -67,7 +87,7 @@ export function computePlayerCardOpportunity(
   });
 
   const playerOpportunity =
-    input.playerOpportunity ?? computePlayerOpportunity(playerContext, cardContext);
+    input.playerOpportunity ?? computePlayerOpportunity(playerContext);
 
   const valuation = computeCardValuation(cardContext, cardWeights);
   const scarcity = computeScarcityScore(cardContext, cardWeights);
@@ -86,7 +106,9 @@ export function computePlayerCardOpportunity(
 
   const lifecycle = classifyPlayerOpportunityLifecycle(
     cardContext.asset,
-    cardContext.classification.lifecycle
+    cardContext.classification.lifecycle,
+    new Date(cardContext.asOf).getFullYear(),
+    playerContext.playerProfile
   );
   const weights = resolvePlayerCardOpportunityWeights({
     era: cardContext.classification.era,
@@ -94,28 +116,47 @@ export function computePlayerCardOpportunity(
     lifecycle,
   });
 
-  const fairMarketValue =
-    playerOpportunity.referenceFairValue ??
-    valuation.fairValue ??
-    0;
-  const currentMarketValue =
-    cardContext.sales[0]?.sale_price ?? valuation.median30d ?? fairMarketValue;
+  const fairMarketValue = valuation.fairValue ?? 0;
+  const currentMarketValue = currentMarketValueFromSales(
+    cardContext.sales,
+    cardContext.asOf,
+    valuation.median30d ?? fairMarketValue
+  );
 
   const mispricing = computeMispricing(currentMarketValue, fairMarketValue);
 
-  const expectedReturn90d = forecast.predictedChangePct ?? playerOpportunity.expectedDemandChange90d;
-  const expectedValue90d =
-    forecast.predictedValue ??
-    roundCurrency(fairMarketValue * (1 + expectedReturn90d / 100));
+  const sportReturn = cardContext.sportMarket?.provenance.available
+    ? cardContext.sportMarket.forecast3mPct * 0.5
+    : 0;
+  const forecastReturn = (forecast.predictedChangePct ?? 0) * 0.2;
+  const expectedReturn90d = roundCurrency(
+    mispricing.marginOfSafety * 0.25 + sportReturn + forecastReturn
+  );
+  const expectedValue90d = roundCurrency(
+    currentMarketValue * (1 + expectedReturn90d / 100)
+  );
 
   const scenarios = scenarioValues(fairMarketValue, expectedReturn90d);
 
   const returnScore = clampScore(50 + expectedReturn90d * 2.5);
   const volatilityScore = risk.volatilityScore;
   const liquidityScore = risk.liquidityScore;
+  const confidenceScore = clampScore(
+    Math.min(
+      playerOpportunity.confidenceScore,
+      valuation.confidence === "none" ? 30 : valuation.confidenceScore
+    )
+  );
+  const uncertaintyScore = clampScore(100 - confidenceScore);
+  const riskScore = permanentLossRiskScore({
+    playerRisk: playerOpportunity.riskScore,
+    priceToFairValueRatio: mispricing.priceToFairValueRatio,
+    liquidityScore,
+    populationGrowthPct: cardContext.supply?.populationGrowthPct ?? 0,
+  });
   const riskAdjustedReturn = riskAdjustedReturnScore(
     expectedReturn90d,
-    playerOpportunity.riskScore,
+    riskScore,
     volatilityScore
   );
 
@@ -138,28 +179,43 @@ export function computePlayerCardOpportunity(
     liquidityScore * weights.liquidity;
 
   const compositeBeforeConstraints = clampScore(rawComposite / totalWeight);
-  const confidenceScore = clampScore(
-    Math.min(
-      playerOpportunity.confidenceScore,
-      valuation.confidence === "none" ? 30 : valuation.confidenceScore
-    )
-  );
-
   const opportunityScore = applyRiskConfidenceConstraints(
     compositeBeforeConstraints,
-    Math.max(playerOpportunity.riskScore, risk.volatilityScore),
+    riskScore,
     confidenceScore
   );
 
-  const recommendation = recommendationFromScore(
+  const rawRecommendation = recommendationFromScore(
     opportunityScore,
     DEFAULT_OPPORTUNITY_THRESHOLDS
   );
+  const recommendation = constrainRecommendation(rawRecommendation, {
+    confidenceScore,
+    priceToFairValueRatio: mispricing.priceToFairValueRatio,
+    marginOfSafety: mispricing.marginOfSafety,
+    sportBear: cardContext.sportMarket?.riskRating === "high",
+  });
 
-  const positiveDrivers: string[] = [];
-  const negativeDrivers: string[] = [];
-
-  positiveDrivers.push(`Player Opportunity: ${playerOpportunity.opportunityScore}.`);
+  const fromScores = driversFromComponentScores(
+    {
+      playerOpportunity: playerOpportunity.opportunityScore,
+      valuation: mispricing.valuationScore,
+      scarcity: scarcity.score,
+      demand: demand.score,
+      expectedReturn: returnScore,
+      liquidity: liquidityScore,
+    },
+    {
+      playerOpportunity: "Player outlook",
+      valuation: "Valuation versus fair value",
+      scarcity: "Scarcity",
+      demand: "Card demand",
+      expectedReturn: "Expected 90-day return",
+      liquidity: "Liquidity",
+    }
+  );
+  const positiveDrivers = [...fromScores.positiveDrivers];
+  const negativeDrivers = [...fromScores.negativeDrivers];
 
   if (mispricing.isUnderpriced) {
     positiveDrivers.push(
@@ -171,15 +227,11 @@ export function computePlayerCardOpportunity(
       `Card trades ${Math.abs(mispricing.marginOfSafety).toFixed(0)}% above estimated fair market value.`
     );
   }
-  if (scarcity.score >= 65) positiveDrivers.push("Scarcity profile is favorable.");
-  if (demand.score >= 60) positiveDrivers.push("Card demand is accelerating.");
-  if (playerOpportunity.opportunityScore >= 75 && mispricing.isOverpriced) {
-    negativeDrivers.push(
-      "Strong player outlook does not offset current overvaluation."
-    );
+  if ((cardContext.supply?.populationGrowthPct ?? 0) > 10 && scarcity.score <= 50) {
+    negativeDrivers.push("Increasing population is reducing scarcity.");
   }
-  if (risk.overallRisk === "high") {
-    negativeDrivers.push("Card risk and volatility are elevated.");
+  if (playerOpportunity.opportunityScore >= 75 && mispricing.isOverpriced) {
+    negativeDrivers.push("Strong player outlook does not offset current overvaluation.");
   }
 
   const computedAt = new Date().toISOString();
@@ -215,8 +267,10 @@ export function computePlayerCardOpportunity(
     downsideScenario: scenarios.downsideScenario,
     marginOfSafety: mispricing.marginOfSafety,
     priceToFairValueRatio: mispricing.priceToFairValueRatio,
-    riskScore: playerOpportunity.riskScore,
+    riskScore,
+    playerRiskScore: playerOpportunity.riskScore,
     volatilityScore,
+    uncertaintyScore,
     confidenceScore,
     recommendation,
     positiveDrivers,
@@ -229,6 +283,7 @@ export function computePlayerCardOpportunity(
       compCount: cardContext.sales.length,
       playerOpportunityProfile: playerOpportunity.weightProfileId,
       valuationConfidence: valuation.confidence,
+      currentPriceRule: "latest-or-7d-median",
     },
   };
 }

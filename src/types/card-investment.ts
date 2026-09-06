@@ -21,7 +21,14 @@ export type PlayerLifecycleStage =
   | "legacy"
   | "unknown";
 
-export type CardEra = "vintage" | "modern" | "ultra_modern" | "unknown";
+export type CardEra =
+  | "pre_war"
+  | "vintage"
+  | "junk_wax"
+  | "early_modern"
+  | "modern"
+  | "ultra_modern"
+  | "unknown";
 
 export type CardArchetype =
   | "rookie"
@@ -158,13 +165,30 @@ export interface PortfolioExposure {
   sport: string;
   era: CardEra;
   archetype: CardArchetype;
+  playerName?: string;
+  manufacturer?: string;
+  grader?: string;
   weightPct: number;
+}
+
+export interface PortfolioConcentration {
+  byPlayer: CardRiskLevel;
+  bySport: CardRiskLevel;
+  byEra: CardRiskLevel;
+  byManufacturer: CardRiskLevel;
+  byGrader: CardRiskLevel;
 }
 
 export interface PortfolioAnalysis {
   concentrationRisk: CardRiskLevel;
   diversificationScore: number;
   exposures: PortfolioExposure[];
+  playerConcentration?: CardRiskLevel;
+  sportConcentration?: CardRiskLevel;
+  eraConcentration?: CardRiskLevel;
+  manufacturerConcentration?: CardRiskLevel;
+  graderConcentration?: CardRiskLevel;
+  speculativeSharePct?: number;
   opportunities: string[];
   risks: string[];
   confidence: InvestmentConfidence;
@@ -177,12 +201,20 @@ export interface CardClassification {
   sportIndexId: string | null;
 }
 
+export interface CardSupplySignals {
+  population?: number | null;
+  populationGrowthPct?: number | null;
+}
+
 export interface CardInvestmentContext {
   asset: Asset;
   asOf: string;
   sales: MarketSale[];
   sportMarket: SportMarketSnapshot | null;
   classification: CardClassification;
+  supply?: CardSupplySignals | null;
+  manufacturer?: string | null;
+  grader?: string | null;
 }
 
 export interface CardInvestmentProfile {

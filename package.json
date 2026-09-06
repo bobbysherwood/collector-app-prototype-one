@@ -15,8 +15,22 @@
     "checklist-harvest": "npx tsx scripts/checklist-harvest/cli.ts",
     "checklist-harvest:run": "npx tsx scripts/checklist-harvest/cli.ts run",
     "checklist-harvest:approve": "npx tsx scripts/checklist-harvest/cli.ts approve",
+    "pop-lookup-poc": "npx tsx scripts/population-lookup-poc.ts",
+    "psa-ingest": "npx tsx scripts/ingest-psa-pop.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:all": "vitest run && npx tsx scripts/model-validation-report.ts",
+    "test:models": "vitest run src/lib/player-opportunity src/lib/player-card-opportunity src/lib/model-validation src/lib/card-investment",
+    "test:validation": "vitest run src/lib/model-validation",
+    "test:validation:player": "vitest run src/lib/model-validation/__tests__/player-opportunity.test.ts",
+    "test:validation:card": "vitest run src/lib/model-validation/__tests__/player-card-opportunity.test.ts",
+    "test:validation:sensitivity": "vitest run src/lib/model-validation/__tests__/sensitivity.test.ts",
+    "test:validation:scenarios": "vitest run src/lib/model-validation/__tests__/player-opportunity.test.ts src/lib/model-validation/__tests__/player-card-opportunity.test.ts src/lib/model-validation/__tests__/seasonality.test.ts src/lib/model-validation/__tests__/market.test.ts",
+    "test:validation:data-quality": "vitest run src/lib/model-validation/__tests__/data-quality.test.ts",
+    "test:validation:explainability": "vitest run src/lib/model-validation/__tests__/explainability.test.ts",
+    "test:validation:regression": "vitest run src/lib/model-validation/__tests__/regression.test.ts",
+    "test:backtest": "vitest run src/lib/model-validation/__tests__/backtest.test.ts",
+    "test:validation:report": "npx tsx scripts/model-validation-report.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

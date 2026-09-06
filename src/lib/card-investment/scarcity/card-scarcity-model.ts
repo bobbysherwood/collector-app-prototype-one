@@ -58,13 +58,76 @@ export function computeScarcityScore(
     });
   }
 
-  if (classification.era === "vintage") {
+  if (classification.lifecycle === "legacy") {
+    score += 10;
+    factors.push({
+      key: "legacy",
+      label: "Hall-of-fame / legacy player supply is naturally constrained",
+      impact: 10,
+      direction: "positive",
+    });
+  }
+
+  if (classification.era === "vintage" || classification.era === "pre_war") {
     score += 12 * weights.scarcity.vintage;
     factors.push({
       key: "vintage",
       label: "Vintage supply constraints",
       impact: 12,
       direction: "positive",
+    });
+  }
+
+  const supply = context.supply;
+  if (supply?.population != null) {
+    const population = supply.population;
+    if (population >= 10000) {
+      const impact = 18 * weights.scarcity.population;
+      score -= impact;
+      factors.push({
+        key: "population",
+        label: `High graded population (${population.toLocaleString()})`,
+        impact,
+        direction: "negative",
+      });
+    } else if (population >= 1000) {
+      const impact = 10 * weights.scarcity.population;
+      score -= impact;
+      factors.push({
+        key: "population",
+        label: `Elevated graded population (${population.toLocaleString()})`,
+        impact,
+        direction: "negative",
+      });
+    } else if (population <= 50) {
+      const impact = 12 * weights.scarcity.population;
+      score += impact;
+      factors.push({
+        key: "population",
+        label: `Low graded population (${population})`,
+        impact,
+        direction: "positive",
+      });
+    } else if (population <= 200) {
+      const impact = 6 * weights.scarcity.population;
+      score += impact;
+      factors.push({
+        key: "population",
+        label: `Constrained graded population (${population})`,
+        impact,
+        direction: "positive",
+      });
+    }
+  }
+
+  if (supply?.populationGrowthPct != null && supply.populationGrowthPct > 10) {
+    const impact = Math.min(15, supply.populationGrowthPct * 0.4) * weights.scarcity.populationGrowth;
+    score -= impact;
+    factors.push({
+      key: "population_growth",
+      label: `Population growing ${supply.populationGrowthPct.toFixed(0)}%`,
+      impact,
+      direction: "negative",
     });
   }
 

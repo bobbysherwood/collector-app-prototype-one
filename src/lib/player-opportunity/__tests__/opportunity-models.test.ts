@@ -27,9 +27,11 @@ function asset(overrides: Partial<Asset> = {}): Asset {
   };
 }
 
-function sale(price: number): MarketSale {
+function sale(price: number, daysBeforeAsOf = 14): MarketSale {
+  const date = new Date("2026-08-08T10:00:00Z");
+  date.setUTCDate(date.getUTCDate() - daysBeforeAsOf);
   return {
-    id: `sale-${price}`,
+    id: `sale-${price}-${daysBeforeAsOf}`,
     source: "ebay",
     title: "Test",
     grader: "PSA",
@@ -38,11 +40,21 @@ function sale(price: number): MarketSale {
     hammer_price: null,
     buyers_premium_pct: null,
     currency: "USD",
-    sale_date: "2026-08-01",
+    sale_date: date.toISOString().slice(0, 10),
     sale_type: "auction",
     listing_url: "https://example.com",
     match_confidence: "high",
   };
+}
+
+function fairTape(current: number, fair: number): MarketSale[] {
+  return [
+    sale(current, 1),
+    sale(fair, 12),
+    sale(fair + 10, 18),
+    sale(fair - 10, 24),
+    sale(fair + 5, 36),
+  ];
 }
 
 function bullMarket() {
@@ -98,7 +110,7 @@ describe("Player Opportunity Model", () => {
 describe("Player/Card Opportunity Model", () => {
   it("does not equate high player score with high card score when overpriced", () => {
     const cardAsset = asset({ player_name: "Victor Wembanyama" });
-    const sales = [sale(500), sale(480), sale(510), sale(495), sale(505)];
+    const sales = fairTape(500, 500);
 
     const cardContext = buildCardInvestmentContextSync(cardAsset, sales, {
       sportMarketOverride: bullMarket(),
@@ -118,7 +130,7 @@ describe("Player/Card Opportunity Model", () => {
     const playerOpp = computePlayerOpportunity(playerContext, cardContext);
     expect(playerOpp.opportunityScore).toBeGreaterThan(60);
 
-    const overpricedSales = [sale(650), sale(640), sale(660), sale(645), sale(655)];
+    const overpricedSales = fairTape(650, 500);
     const overpricedContext = buildCardInvestmentContextSync(cardAsset, overpricedSales, {
       sportMarketOverride: bullMarket(),
     });
@@ -136,8 +148,8 @@ describe("Player/Card Opportunity Model", () => {
 
   it("rewards underpriced card with strong player outlook", () => {
     const cardAsset = asset();
-    const fairSales = [sale(400), sale(410), sale(395), sale(405), sale(400)];
-    const underpricedSales = [sale(320), sale(330), sale(325), sale(315), sale(328)];
+    const fairSales = fairTape(400, 400);
+    const underpricedSales = fairTape(320, 400);
 
     const playerContext = buildPlayerOpportunityContextSync(cardAsset, {
       sportMarketOverride: bullMarket(),

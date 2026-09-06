@@ -83,11 +83,19 @@ export function buildCatalogNotes(input: {
 export function assetToCardFormIdentity(
   asset: Pick<
     Asset,
-    "player_name" | "year" | "sport" | "card_type" | "card_number" | "insert_parallel" | "notes"
+    | "player_name"
+    | "player_id"
+    | "year"
+    | "sport"
+    | "card_type"
+    | "card_number"
+    | "insert_parallel"
+    | "notes"
   >
 ): Pick<
   CardFormData,
   | "player_name"
+  | "player_id"
   | "year"
   | "sport"
   | "manufacturer"
@@ -102,6 +110,7 @@ export function assetToCardFormIdentity(
 
   return {
     player_name: asset.player_name,
+    player_id: asset.player_id ?? null,
     year: asset.year,
     sport: asset.sport,
     manufacturer: parsed.manufacturer,
@@ -115,7 +124,7 @@ export function assetToCardFormIdentity(
 }
 
 export function validateCardIdentity(data: CardFormData): string | null {
-  if (!data.player_name.trim()) return "Player name is required.";
+  if (!data.player_name.trim() && !data.player_id) return "Select a catalog player.";
   if (!data.card_number.trim()) return "Card number is required.";
   if (!data.manufacturer.trim()) return "Manufacturer is required.";
   if (!data.brand.trim()) return "Brand is required.";
@@ -148,6 +157,7 @@ export function validateCardIdentity(data: CardFormData): string | null {
 export function normalizeAssetFieldsFromForm(data: CardFormData) {
   return {
     player_name: data.player_name.trim(),
+    player_id: data.player_id,
     year: data.year,
     card_type: data.brand.trim(),
     sport: data.sport as Sport,

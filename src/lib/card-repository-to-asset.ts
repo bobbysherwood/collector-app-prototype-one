@@ -37,6 +37,7 @@ export function repositoryCardToFormPrefill(
 ): Pick<
   CardFormData,
   | "player_name"
+  | "player_id"
   | "year"
   | "sport"
   | "manufacturer"
@@ -49,6 +50,7 @@ export function repositoryCardToFormPrefill(
 > {
   return {
     player_name: card.player,
+    player_id: null,
     year: card.year,
     sport: mapRepositoryCategoryToSport(card.category),
     manufacturer: card.manufacturer,

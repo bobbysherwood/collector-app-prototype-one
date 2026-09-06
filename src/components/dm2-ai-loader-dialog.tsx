@@ -13,10 +13,7 @@ import {
   Sparkles,
   Upload,
 } from "lucide-react";
-import {
-  commitDm2ImportSession,
-  processDm2ImportFiles,
-} from "@/app/actions/dm2-import";
+import { commitDm2ImportSession } from "@/app/actions/dm2-import";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,12 +56,18 @@ import {
   DM2_IMPORT_MAX_TOTAL_BYTES,
 } from "@/lib/dm2-import-file-content";
 import { Dm2ImportReviewCardSets } from "@/components/dm2-import-review-card-sets";
+import { Dm2ImportReviewPlayers } from "@/components/dm2-import-review-players";
 import { Dm2ImportCommitResultsDialog } from "@/components/dm2-import-commit-results-dialog";
 import { Dm2StructuredUploadDialog } from "@/components/dm2-structured-upload-dialog";
 import {
   Dm2ImportReviewCards,
   type CardReviewFilter,
 } from "@/components/dm2-import-review-cards";
+import {
+  commitPlayersReviewStep,
+  countPendingPlayerReviewPairs,
+  mergeImportPlayerReview,
+} from "@/lib/dm2-import-players";
 import {
   buildCardSetGroups,
   commitCardSetsReviewStep,
@@ -109,7 +112,7 @@ import type {
 } from "@/types/dm2-import";
 
 const ACCEPTED_TYPES = ".pdf,.xlsx,.xls,.csv";
-type ReviewStep = "lookups" | "cardSets" | "cards";
+type ReviewStep = "lookups" | "players" | "cardSets" | "cards";
 type LookupTypeFilter = "all" | "pending" | Dm2ImportEntityType;
 type CardSetFieldFilter = "all" | "pending" | CardSetGroupField;
 
@@ -124,17 +127,6 @@ const LOOKUP_ENTITY_TYPES: Dm2ImportEntityType[] = [
 
 function formatMegabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
 }
 
 function validateSelectedFiles(files: File[]): string | null {
@@ -157,14 +149,26 @@ function validateSelectedFiles(files: File[]): string | null {
   return null;
 }
 
-function formatProcessError(error: unknown): string {
+function formatProcessError(
+  error: unknown,
+  kind: "upload" | "commit" = "upload"
+): string {
   if (error instanceof Error) {
     if (/failed to fetch/i.test(error.message)) {
-      return "Commit failed — the request timed out or the connection was lost. Large imports can take several minutes; try again after the batch insert update, or check how many cards were saved in the database.";
+      return kind === "commit"
+        ? "Commit failed — the request timed out or the connection was lost. Large imports can take several minutes; check how many cards were saved in the database."
+        : "The upload timed out or the connection was lost. Large checklists can take a minute or more — retry once.";
+    }
+    if (/unexpected response was received from the server/i.test(error.message)) {
+      return kind === "commit"
+        ? "Commit failed — the server closed the connection before finishing. Large imports can time out; check how many cards were saved."
+        : "The AI Loader lost the connection while processing this file. Large checklists can take a minute or more — retry once.";
     }
     return error.message;
   }
-  return "Failed to process uploaded files.";
+  return kind === "commit"
+    ? "Failed to commit import."
+    : "Failed to process uploaded files.";
 }
 
 function entityTypeLabel(entityType: Dm2LookupProposal["entityType"]): string {
@@ -287,7 +291,16 @@ export function Dm2AiLoaderDialog() {
   );
 
   const pendingProposals = session ? getPendingProposalCount(session) : 0;
+  const playerReview = useMemo(() => {
+    if (!session) return undefined;
+    if (reviewStep === "players" || session.playerReview) {
+      return mergeImportPlayerReview(session);
+    }
+    return session.playerReview;
+  }, [session, reviewStep]);
+  const pendingPlayerPairs = countPendingPlayerReviewPairs(playerReview);
   const lookupsCommitted = Boolean(session?.reviewProgress?.lookupsCommittedAt);
+  const playersCommitted = Boolean(session?.reviewProgress?.playersCommittedAt);
   const cardSetsCommitted = Boolean(session?.reviewProgress?.cardSetsCommittedAt);
   const cardsReviewCommitted = Boolean(session?.reviewProgress?.cardsReviewCommittedAt);
 
@@ -449,6 +462,17 @@ export function Dm2AiLoaderDialog() {
     runReviewStepCommit(
       () => commitLookupsReviewStep(activeSession),
       () => {
+        setReviewStep("players");
+      }
+    );
+  }
+
+  function handleCommitPlayersAndContinue() {
+    const activeSession = session;
+    if (!activeSession) return;
+    runReviewStepCommit(
+      () => commitPlayersReviewStep(activeSession),
+      () => {
         setReviewStep("cardSets");
         setCardSetActions({});
         setCardSetFieldFilter("pending");
@@ -488,6 +512,11 @@ export function Dm2AiLoaderDialog() {
     setIssueFilter("all");
   }
 
+  function handleBackToPlayers() {
+    setReviewStep("players");
+    setIssueFilter("all");
+  }
+
   function handleBackToCardSets() {
     setReviewStep("cardSets");
     setIssueFilter("all");
@@ -520,18 +549,28 @@ export function Dm2AiLoaderDialog() {
     setCommitResult(null);
 
     try {
-      const payload = await Promise.all(
-        selectedFiles.map(async (file) => {
-          const buffer = await file.arrayBuffer();
-          return {
-            fileName: file.name,
-            mimeType: file.type || "application/octet-stream",
-            contentBase64: arrayBufferToBase64(buffer),
-          };
-        })
-      );
+      const formData = new FormData();
+      for (const file of selectedFiles) {
+        formData.append("files", file);
+      }
 
-      const result = await processDm2ImportFiles(payload);
+      const response = await fetch("/api/admin/dm2-import/process", {
+        method: "POST",
+        body: formData,
+      });
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          response.ok
+            ? "The server returned an unexpected response while processing this file."
+            : `Upload failed (${response.status}). The server closed the connection before finishing.`
+        );
+      }
+
+      const result = (await response.json()) as {
+        error?: string;
+        session?: Dm2ImportSession;
+      };
       if (result.error && (!result.session || result.session.rows.length === 0)) {
         setError(result.error);
         if (result.session) {
@@ -550,7 +589,10 @@ export function Dm2AiLoaderDialog() {
         if (result.error) {
           setError(result.error);
         }
+        return;
       }
+
+      setError(result.error ?? "Failed to process uploaded files.");
     } catch (processError) {
       setError(formatProcessError(processError));
     } finally {
@@ -613,7 +655,7 @@ export function Dm2AiLoaderDialog() {
       setUploadOpen(false);
       resetSessionState();
     } catch (commitError) {
-      setError(formatProcessError(commitError));
+      setError(formatProcessError(commitError, "commit"));
     } finally {
       setCommitting(false);
     }
@@ -770,10 +812,12 @@ export function Dm2AiLoaderDialog() {
             <DialogTitle>Review import session</DialogTitle>
             <DialogDescription>
               {reviewStep === "lookups"
-                ? "Step 1 of 3 — validate lookup values. Resolve every proposal before reviewing card sets."
+                ? "Step 1 of 4 — validate lookup values. Resolve every proposal before reviewing players."
+                : reviewStep === "players"
+                  ? "Step 2 of 4 — validate players. Match file names to catalog players, or create new ones."
                 : reviewStep === "cardSets"
-                  ? "Step 2 of 3 — validate card set mappings. Confirm each card set combination is complete."
-                  : "Step 3 of 3 — validate cards. Confirm card number, player, card set, and parallel."}
+                  ? "Step 3 of 4 — validate card set mappings. Confirm each card set combination is complete."
+                  : "Step 4 of 4 — validate cards. Confirm card number, player, card set, and parallel."}
             </DialogDescription>
           </DialogHeader>
 
@@ -789,12 +833,20 @@ export function Dm2AiLoaderDialog() {
                   },
                   {
                     step: 2,
+                    key: "players" as const,
+                    title: "Validate players",
+                    detail: session.playerReview
+                      ? `${pendingPlayerPairs} pair(s) to review`
+                      : "After lookups",
+                  },
+                  {
+                    step: 3,
                     key: "cardSets" as const,
                     title: "Validate card set",
                     detail: `${cardSetGroups.length} sets · ${pendingCardSets} pending`,
                   },
                   {
-                    step: 3,
+                    step: 4,
                     key: "cards" as const,
                     title: "Validate cards",
                     detail: `${session.rows.length} rows · ${readyRows} ready`,
@@ -803,6 +855,8 @@ export function Dm2AiLoaderDialog() {
                   const committed =
                     item.key === "lookups"
                       ? lookupsCommitted
+                      : item.key === "players"
+                        ? playersCommitted
                       : item.key === "cardSets"
                         ? cardSetsCommitted
                         : cardsReviewCommitted;
@@ -857,6 +911,8 @@ export function Dm2AiLoaderDialog() {
                   <p className="text-xs text-muted-foreground">
                     {reviewStep === "lookups"
                       ? "Lookup issues"
+                      : reviewStep === "players"
+                        ? "Player pairs"
                       : reviewStep === "cardSets"
                         ? "Pending card sets"
                         : "Ready rows"}
@@ -865,12 +921,15 @@ export function Dm2AiLoaderDialog() {
                     className={cn(
                       "text-lg font-semibold",
                       ((reviewStep === "lookups" && lookupBlockingCount > 0) ||
+                        (reviewStep === "players" && pendingPlayerPairs > 0) ||
                         (reviewStep === "cardSets" && pendingCardSets > 0)) &&
                         "text-destructive"
                     )}
                   >
                     {reviewStep === "lookups"
                       ? lookupBlockingCount
+                      : reviewStep === "players"
+                        ? pendingPlayerPairs
                       : reviewStep === "cardSets"
                         ? pendingCardSets
                         : readyRows}
@@ -1309,7 +1368,7 @@ export function Dm2AiLoaderDialog() {
                             Lookup warnings ({lookupWarningIssues.length})
                           </h3>
                           <p className="text-xs text-muted-foreground">
-                            These do not block continuing to cards.
+                            These do not block continuing.
                           </p>
                           {lookupWarningIssues.map((issue) => (
                             <div
@@ -1330,6 +1389,13 @@ export function Dm2AiLoaderDialog() {
                     </section>
                   )}
                 </>
+              )}
+
+              {reviewStep === "players" && session && (
+                <Dm2ImportReviewPlayers
+                  session={session}
+                  onSessionChange={(updater) => updateSession(updater, "players")}
+                />
               )}
 
               {reviewStep === "cardSets" && session && (
@@ -1378,6 +1444,19 @@ export function Dm2AiLoaderDialog() {
           {reviewStep === "lookups" && session && lookupsCommitted && (
             <p className="text-xs text-muted-foreground">
               Lookups committed. You can go back to edit, then commit again to
+              continue.
+            </p>
+          )}
+
+          {reviewStep === "players" && session && !playersCommitted && pendingPlayerPairs > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Commit is disabled: {pendingPlayerPairs} player pair(s) still need
+              a merge or keep-both decision.
+            </p>
+          )}
+          {reviewStep === "players" && session && playersCommitted && (
+            <p className="text-xs text-muted-foreground">
+              Players committed. You can go back to edit, then commit again to
               continue.
             </p>
           )}
@@ -1441,12 +1520,12 @@ export function Dm2AiLoaderDialog() {
                   </>
                 ) : (
                   <>
-                    Commit & continue to card sets
+                    Commit & continue to players
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}
               </Button>
-            ) : reviewStep === "cardSets" ? (
+            ) : reviewStep === "players" ? (
               <>
                 <Button
                   variant="outline"
@@ -1456,6 +1535,35 @@ export function Dm2AiLoaderDialog() {
                 >
                   <ArrowLeft className="h-4 w-4" />
                   Back to lookups
+                </Button>
+                <Button
+                  className="gap-2"
+                  disabled={!session || stepCommitting || pendingPlayerPairs > 0}
+                  onClick={handleCommitPlayersAndContinue}
+                >
+                  {stepCommitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Committing...
+                    </>
+                  ) : (
+                    <>
+                      Commit & continue to card sets
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : reviewStep === "cardSets" ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  disabled={committing || stepCommitting}
+                  onClick={handleBackToPlayers}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to players
                 </Button>
                 <Button
                   className="gap-2"
@@ -1525,7 +1633,7 @@ export function Dm2AiLoaderDialog() {
           <DialogHeader>
             <DialogTitle>Commit import</DialogTitle>
             <DialogDescription>
-              This will create new lookup values and cards in Data Model v2.
+              This will create new lookup values, players, and cards in Data Model v2.
               Duplicates are skipped.
             </DialogDescription>
           </DialogHeader>

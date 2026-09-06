@@ -1,10 +1,7 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import { getDm2CardById } from "@/app/actions/data-model-v2";
-import { MarketResearchCardDetail } from "@/components/market-research-card-detail";
-import { Button } from "@/components/ui/button";
+import { CardResearchView } from "@/components/market-research/card-research-view";
 import { getAiFeatureSettings } from "@/lib/ai-feature-settings";
+import { loadCardResearchPage } from "@/lib/market-research/load-pages";
 
 export default async function MarketResearchCardPage({
   params,
@@ -12,31 +9,13 @@ export default async function MarketResearchCardPage({
   params: Promise<{ id: string }>;
 }) {
   const aiFeatureSettings = await getAiFeatureSettings();
-
   if (!aiFeatureSettings.marketResearchEnabled) {
     redirect("/dashboard");
   }
 
   const { id } = await params;
-  const result = await getDm2CardById(id);
+  const data = await loadCardResearchPage(id);
+  if (!data) notFound();
 
-  if (result.error || !result.card) {
-    notFound();
-  }
-
-  return (
-    <div className="space-y-6">
-      <Button
-        render={<Link href="/market-research" />}
-        nativeButton={false}
-        variant="ghost"
-        className="gap-2"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Market Research
-      </Button>
-
-      <MarketResearchCardDetail card={result.card} />
-    </div>
-  );
+  return <CardResearchView data={data} />;
 }

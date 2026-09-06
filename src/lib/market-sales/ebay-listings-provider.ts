@@ -4,6 +4,7 @@ import { searchEbayListingsForQuery } from "@/lib/ebay/browse-client";
 import { getEbayEnvironment, getMissingEbayConfigVars, isEbayConfigured } from "@/lib/ebay/config";
 import {
   getCachedEbayListings,
+  isEbayListingsCacheAssetId,
   upsertCachedEbayListings,
 } from "@/lib/ebay/listings-cache";
 import { mapEbayItemSummariesToMarketListings } from "@/lib/ebay/listing-mapper";
@@ -27,8 +28,9 @@ export async function getEbayListingsForAsset(
   asset: Asset
 ): Promise<EbayListingsFetchResult> {
   const sandboxMode = getEbayEnvironment() === "sandbox";
+  const canCache = isEbayListingsCacheAssetId(asset.id);
 
-  const cached = await getCachedEbayListings(asset.id);
+  const cached = canCache ? await getCachedEbayListings(asset.id) : null;
   if (cached) {
     return {
       listings: highConfidenceListings(cached.listings),
@@ -64,12 +66,13 @@ export async function getEbayListingsForAsset(
     const listings = highConfidenceListings(
       mapEbayItemSummariesToMarketListings(asset, summaries)
     );
-    const fetchedAt =
-      (await upsertCachedEbayListings({
-        assetId: asset.id,
-        listings,
-        searchQuery: searchQuery.q,
-      })) ?? new Date().toISOString();
+    const fetchedAt = canCache
+      ? ((await upsertCachedEbayListings({
+          assetId: asset.id,
+          listings,
+          searchQuery: searchQuery.q,
+        })) ?? new Date().toISOString())
+      : new Date().toISOString();
 
     if (sandboxMode && listings.length === 0) {
       if (!process.env.EBAY_USER_REFRESH_TOKEN?.trim()) {

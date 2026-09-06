@@ -46,6 +46,12 @@ import {
   formatWebResearchForPrompt,
   researchCardSetsOnWeb,
 } from "@/lib/dm2-import-web-research";
+import { DM2_SUPABASE_PAGE_SIZE } from "@/lib/data-model-v2-data";
+import { normalizePlayerNameKey } from "@/lib/dm2-player-match";
+import {
+  buildPlayerCommitGroups,
+  mergeImportPlayerReview,
+} from "@/lib/dm2-import-players";
 import {
   getDm2Brands,
   getDm2CardSetCategories,
@@ -54,6 +60,8 @@ import {
   getDm2EntityDescriptions,
   getDm2Manufacturers,
   getDm2Parallels,
+  getDm2PlayerAliasCatalogEntries,
+  getDm2PlayerCatalogEntries,
 } from "@/lib/data-model-v2-data";
 import { getAdminPickLists } from "@/lib/pick-list-data";
 import { getUserProfile } from "@/lib/data";
@@ -79,6 +87,19 @@ function revalidateDataModelV2Paths() {
   revalidatePath("/admin");
 }
 
+/** Drop bulky unused catalog slices before sending the session to the browser. */
+function sessionForClient(session: Dm2ImportSession): Dm2ImportSession {
+  if (!session.catalog) return session;
+  return {
+    ...session,
+    catalog: {
+      ...session.catalog,
+      cards: [],
+      entityDescriptions: [],
+    },
+  };
+}
+
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -93,6 +114,8 @@ async function loadCatalogContext(): Promise<Dm2ImportCatalogContext> {
     cardSetNames,
     parallels,
     cardSets,
+    players,
+    playerAliases,
   ] = await Promise.all([
     getDm2EntityDescriptions(),
     getAdminPickLists(),
@@ -102,6 +125,8 @@ async function loadCatalogContext(): Promise<Dm2ImportCatalogContext> {
     getDm2CardSetNames(),
     getDm2Parallels(),
     getDm2CardSets(),
+    getDm2PlayerCatalogEntries(),
+    getDm2PlayerAliasCatalogEntries(),
   ]);
 
   return {
@@ -161,6 +186,8 @@ async function loadCatalogContext(): Promise<Dm2ImportCatalogContext> {
       manufacturerName: item.manufacturerName,
     })),
     cards: [],
+    players,
+    playerAliases,
   };
 }
 
@@ -253,6 +280,21 @@ export async function processDm2StructuredImportFile(
 }
 
 export async function processDm2ImportFiles(
+  files: Dm2ImportFileInput[]
+): Promise<{ error?: string; session?: Dm2ImportSession }> {
+  try {
+    return await runProcessDm2ImportFiles(files);
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to process uploaded files.",
+    };
+  }
+}
+
+async function runProcessDm2ImportFiles(
   files: Dm2ImportFileInput[]
 ): Promise<{ error?: string; session?: Dm2ImportSession }> {
   const auth = await requireAdmin();
@@ -553,18 +595,20 @@ export async function processDm2ImportFiles(
       error:
         failureDetails ??
         "No card rows were found in the uploaded files.",
-      session: buildDm2ImportSession({
-        id: sessionId,
-        files: fileResults,
-        contexts,
-        rows: [],
-        model,
-        promptVersion,
-        catalog,
-        suggestions,
-        researchNotes,
-        mappingFramework,
-      }),
+      session: sessionForClient(
+        buildDm2ImportSession({
+          id: sessionId,
+          files: fileResults,
+          contexts,
+          rows: [],
+          model,
+          promptVersion,
+          catalog,
+          suggestions,
+          researchNotes,
+          mappingFramework,
+        })
+      ),
     };
   }
 
@@ -634,7 +678,7 @@ export async function processDm2ImportFiles(
     mappingFramework,
   });
 
-  return { session };
+  return { session: sessionForClient(session) };
 }
 
 function mergeContexts(
@@ -811,13 +855,11 @@ function findProposalForCommitIndexed(
 function cardInsertIdentityKey(insert: {
   card_set_id: string;
   card_number: string;
-  player: string;
   parallel_id: string | null;
 }): string {
   return [
     insert.card_set_id,
     insert.card_number.trim().toLowerCase(),
-    insert.player.trim().toLowerCase(),
     insert.parallel_id ?? NULL_PARALLEL_UUID,
   ].join("|");
 }
@@ -839,7 +881,7 @@ async function loadExistingCardIdentityKeys(
     while (true) {
       const { data, error } = await supabase
         .from("dm2_cards")
-        .select("card_set_id, card_number, player, parallel_id")
+        .select("card_set_id, card_number, parallel_id")
         .in("card_set_id", idChunk)
         .range(offset, offset + EXISTING_CARD_KEY_PAGE_SIZE - 1);
 
@@ -859,6 +901,221 @@ async function loadExistingCardIdentityKeys(
   }
 
   return keys;
+}
+
+async function loadPlayerIdsBySportAndKey(
+  supabase: Awaited<
+    ReturnType<(typeof import("@/lib/supabase/server"))["createClient"]>
+  >
+): Promise<Map<string, string>> {
+  const keys = new Map<string, string>();
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("dm2_players")
+      .select("id, sport_id, name_key")
+      .order("id", { ascending: true })
+      .range(from, from + DM2_SUPABASE_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) {
+      keys.set(`${row.sport_id}::${row.name_key}`, row.id);
+    }
+    if (data.length < DM2_SUPABASE_PAGE_SIZE) break;
+    from += DM2_SUPABASE_PAGE_SIZE;
+  }
+
+  from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("dm2_player_aliases")
+      .select("player_id, sport_id, name_key")
+      .order("id", { ascending: true })
+      .range(from, from + DM2_SUPABASE_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) {
+      keys.set(`${row.sport_id}::${row.name_key}`, row.player_id);
+    }
+    if (data.length < DM2_SUPABASE_PAGE_SIZE) break;
+    from += DM2_SUPABASE_PAGE_SIZE;
+  }
+
+  return keys;
+}
+
+async function lookupPlayerIdByNameKey(
+  supabase: Awaited<
+    ReturnType<(typeof import("@/lib/supabase/server"))["createClient"]>
+  >,
+  sportId: string,
+  nameKey: string
+): Promise<string | undefined> {
+  const { data } = await supabase
+    .from("dm2_players")
+    .select("id")
+    .eq("sport_id", sportId)
+    .eq("name_key", nameKey)
+    .maybeSingle();
+  if (data?.id) return data.id;
+
+  const { data: alias } = await supabase
+    .from("dm2_player_aliases")
+    .select("player_id")
+    .eq("sport_id", sportId)
+    .eq("name_key", nameKey)
+    .maybeSingle();
+  return alias?.player_id;
+}
+
+async function applyImportPlayerReview(
+  supabase: Awaited<
+    ReturnType<(typeof import("@/lib/supabase/server"))["createClient"]>
+  >,
+  session: Dm2ImportSession,
+  resolvedIds: Map<string, string>,
+  playerKeys: Map<string, string>,
+  stats: CommitStatsCollector
+): Promise<{ error?: string }> {
+  const review = session.playerReview ?? mergeImportPlayerReview(session);
+  const plan = buildPlayerCommitGroups(review);
+  if (plan.error) {
+    stats.pushError({
+      code: "player_create_failed",
+      message: plan.error,
+    });
+    return { error: plan.error };
+  }
+
+  for (const group of plan.groups) {
+    const sportProposal = findProposalForCommit(
+      session,
+      "sport",
+      group.sportLabel
+    );
+    const sportId =
+      group.sportId ??
+      (sportProposal
+        ? resolveProposalId(sportProposal, resolvedIds)
+        : session.catalog?.sports.find(
+            (sport) => normalizeKey(sport.label) === group.sportKey
+          )?.id);
+
+    if (!sportId) {
+      const message = `Cannot create player "${group.canonicalName}" without a resolved sport (${group.sportLabel}).`;
+      stats.pushError({
+        code: "player_create_failed",
+        message,
+      });
+      return { error: message };
+    }
+
+    let playerId = group.catalogPlayerId;
+    if (!playerId) {
+      const { data, error } = await supabase
+        .from("dm2_players")
+        .insert({
+          sport_id: sportId,
+          name: group.canonicalName.trim(),
+          active: true,
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        if (error.code === "23505") {
+          const existingId = await lookupPlayerIdByNameKey(
+            supabase,
+            sportId,
+            normalizePlayerNameKey(group.canonicalName)
+          );
+          if (existingId) {
+            stats.pushDuplicate({
+              entityType: "player",
+              label: duplicateEntityLabel("player", group.canonicalName),
+              detail: "Reused existing catalog player",
+            });
+            playerId = existingId;
+          }
+        }
+        if (!playerId) {
+          const message = `Failed to create player "${group.canonicalName}": ${error.message}`;
+          stats.pushError({
+            code: "player_create_failed",
+            message,
+          });
+          return { error: message };
+        }
+      } else if (data?.id) {
+        stats.added.players += 1;
+        playerId = data.id;
+      }
+    }
+
+    if (!playerId) {
+      const message = `Failed to resolve player "${group.canonicalName}".`;
+      stats.pushError({
+        code: "player_create_failed",
+        message,
+      });
+      return { error: message };
+    }
+
+    if (!group.catalogPlayerId) {
+      playerKeys.set(
+        `${sportId}::${normalizePlayerNameKey(group.canonicalName)}`,
+        playerId
+      );
+    }
+
+    for (const aliasName of group.aliasNames) {
+      const aliasKey = normalizePlayerNameKey(aliasName);
+      if (!aliasKey) continue;
+      const mapKey = `${sportId}::${aliasKey}`;
+      if (playerKeys.has(mapKey)) continue;
+
+      const { error } = await supabase.from("dm2_player_aliases").insert({
+        player_id: playerId,
+        sport_id: sportId,
+        name: aliasName.trim(),
+      });
+      if (error && error.code !== "23505") {
+        const message = `Failed to save player alias "${aliasName}" for "${group.canonicalName}": ${error.message}`;
+        stats.pushError({
+          code: "player_create_failed",
+          message,
+        });
+        return { error: message };
+      }
+      playerKeys.set(mapKey, playerId);
+    }
+  }
+
+  return {};
+}
+
+function resolveImportPlayerIds(
+  playerText: string,
+  sportId: string,
+  playerKeys: Map<string, string>
+): { playerIds?: string[]; missing?: string[] } {
+  const parts = playerText
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return { missing: ["player"] };
+
+  const playerIds: string[] = [];
+  const missing: string[] = [];
+  for (const part of parts) {
+    const id =
+      playerKeys.get(`${sportId}::${normalizePlayerNameKey(part)}`) ??
+      playerKeys.get(`${sportId}::${part.trim().toLowerCase()}`);
+    if (!id) missing.push(part);
+    else if (!playerIds.includes(id)) playerIds.push(id);
+  }
+  if (missing.length > 0) return { missing };
+  return { playerIds };
 }
 
 function partitionNewCardInserts(
@@ -892,8 +1149,8 @@ function partitionNewCardInserts(
 type CardInsertRow = {
   card_set_id: string;
   card_number: string;
-  player: string;
   parallel_id: string | null;
+  player_ids: string[];
   active: boolean;
 };
 
@@ -929,10 +1186,23 @@ async function insertCardBatch(
 ): Promise<{ error?: string }> {
   if (rows.length === 0) return {};
 
-  const payload = rows.map((row) => row.insert);
-  const { error } = await supabase.from("dm2_cards").insert(payload);
+  const { data, error } = await supabase.rpc("create_dm2_cards_with_players", {
+    p_rows: rows.map((row) => ({
+      card_set_id: row.insert.card_set_id,
+      card_number: row.insert.card_number,
+      parallel_id: row.insert.parallel_id,
+      player_ids: row.insert.player_ids,
+    })),
+  });
   if (!error) {
-    stats.added.cards += rows.length;
+    const created = Number(
+      (data as { created?: number } | null)?.created ?? rows.length
+    );
+    const skipped = Number((data as { skipped?: number } | null)?.skipped ?? 0);
+    stats.added.cards += created;
+    for (let i = 0; i < skipped; i += 1) {
+      stats.incrementCardsSkipped();
+    }
     return {};
   }
 
@@ -1262,6 +1532,29 @@ export async function commitDm2ImportSession(
   const activeRows = session.rows.filter((row) => !row.excluded);
   const pendingCardInserts: PendingCardInsert[] = [];
   const proposalIndex = buildCommitProposalIndex(session.proposals);
+  let playerKeys: Map<string, string>;
+  try {
+    playerKeys = await loadPlayerIdsBySportAndKey(supabase);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to load players";
+    stats.pushError({
+      code: "batch_insert_failed",
+      message,
+    });
+    return stats.toResult({ error: message });
+  }
+
+  const playerApply = await applyImportPlayerReview(
+    supabase,
+    session,
+    resolvedIds,
+    playerKeys,
+    stats
+  );
+  if (playerApply.error) {
+    return stats.toResult({ error: playerApply.error });
+  }
 
   for (const row of activeRows) {
     const sportProposal = findProposalForCommitIndexed(
@@ -1478,11 +1771,31 @@ export async function commitDm2ImportSession(
         : null;
     }
 
+    const resolvedPlayers = resolveImportPlayerIds(
+      row.player.trim(),
+      sportId,
+      playerKeys
+    );
+    if (!resolvedPlayers.playerIds) {
+      stats.incrementCardsFailed();
+      stats.pushError({
+        code: "row_incomplete",
+        message: `Unknown player name(s) for this sport: ${(resolvedPlayers.missing ?? []).join(", ")}. Resolve them in Validate players, then commit that step.`,
+        rowId: row.id,
+        sourceFileName: row.sourceFileName,
+        sourceRowIndex: row.sourceRowIndex,
+        cardNumber: row.cardNumber,
+        player: row.player,
+        cardSetName: row.cardSetName,
+      });
+      continue;
+    }
+
     pendingCardInserts.push({
       insert: {
         card_set_id: cardSetId,
         card_number: row.cardNumber.trim(),
-        player: row.player.trim(),
+        player_ids: resolvedPlayers.playerIds,
         parallel_id: parallelId,
         active: true,
       },

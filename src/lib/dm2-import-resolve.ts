@@ -1,5 +1,6 @@
 import { createId } from "@/lib/create-id";
 import { applyCatalogCardSetHintsToRows } from "@/lib/dm2-import-catalog-hints";
+import { buildImportPlayerReview } from "@/lib/dm2-import-players";
 import {
   dm2ImportDebugLog,
   dm2ImportDebugWarn,
@@ -916,6 +917,7 @@ export function rebuildDm2ImportSession(
     catalog: session.catalog,
     reviewProgress: session.reviewProgress,
     duplicateResolutions: session.duplicateResolutions,
+    playerReview: session.playerReview,
   };
 }
 
@@ -1998,7 +2000,7 @@ export function getReadyRowCount(session: Dm2ImportSession): number {
   ).length;
 }
 
-export type Dm2ReviewProgressStep = "lookups" | "cardSets" | "cards";
+export type Dm2ReviewProgressStep = "lookups" | "players" | "cardSets" | "cards";
 
 export interface Dm2ImportReviewStepCommitResult {
   session?: Dm2ImportSession;
@@ -2013,6 +2015,11 @@ export function invalidateReviewProgressFrom(
 
   if (step === "lookups") {
     delete progress.lookupsCommittedAt;
+    delete progress.playersCommittedAt;
+    delete progress.cardSetsCommittedAt;
+    delete progress.cardsReviewCommittedAt;
+  } else if (step === "players") {
+    delete progress.playersCommittedAt;
     delete progress.cardSetsCommittedAt;
     delete progress.cardsReviewCommittedAt;
   } else if (step === "cardSets") {
@@ -2066,6 +2073,7 @@ export function commitLookupsReviewStep(
   return {
     session: {
       ...reprocessed,
+      playerReview: buildImportPlayerReview(reprocessed),
       reviewProgress: {
         lookupsCommittedAt: new Date().toISOString(),
       },

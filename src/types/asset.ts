@@ -20,6 +20,7 @@ export interface Asset {
   id: string;
   user_id: string;
   player_name: string;
+  player_id?: string | null;
   year: number;
   card_type: string;
   sport: Sport;
@@ -84,6 +85,7 @@ export type Card = Asset;
 
 export interface CardFormData {
   player_name: string;
+  player_id: string | null;
   year: number;
   sport: Sport;
   manufacturer: string;

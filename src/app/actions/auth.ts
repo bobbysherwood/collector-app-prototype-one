@@ -94,6 +94,12 @@ export async function signIn(formData: FormData) {
   });
 
   if (error) {
+    if (/rate limit/i.test(error.message)) {
+      return {
+        error:
+          "Supabase Auth is rate-limited. Wait about 15 minutes, close extra tabs for this app, then try once.",
+      };
+    }
     return { error: error.message };
   }
 

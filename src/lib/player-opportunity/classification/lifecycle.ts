@@ -45,8 +45,19 @@ export function parsePlayerId(playerId: string): { playerName: string; sport: st
 
 export function classifyPlayerOpportunityLifecycle(
   asset: Asset,
-  cardLifecycle: PlayerLifecycleStage
+  cardLifecycle: PlayerLifecycleStage,
+  asOfYear = new Date().getFullYear(),
+  profile?: { careerStatus?: PlayerOpportunityLifecycle | null; birthYear?: number | null }
 ): PlayerOpportunityLifecycle {
+  if (profile?.careerStatus) {
+    return profile.careerStatus;
+  }
+
+  if (profile?.birthYear != null) {
+    const age = asOfYear - profile.birthYear;
+    if (age <= 21 && cardLifecycle !== "legacy") return "prospect";
+  }
+
   const player = asset.player_name.toLowerCase();
   const cardType = asset.card_type.toLowerCase();
 
@@ -63,7 +74,7 @@ export function classifyPlayerOpportunityLifecycle(
     cardType.includes("rc") ||
     cardLifecycle === "rising"
   ) {
-    const age = new Date().getFullYear() - asset.year;
+    const age = asOfYear - asset.year;
     if (age <= 2) return "prospect";
   }
 

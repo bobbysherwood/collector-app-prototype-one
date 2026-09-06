@@ -30,6 +30,16 @@ export interface OpportunityCatalyst extends Catalyst {
   expectedDurationDays: number;
 }
 
+export type PlayerCareerStatus = PlayerOpportunityLifecycle;
+
+export interface PlayerProfileSignals {
+  birthYear?: number | null;
+  careerStatus?: PlayerCareerStatus | null;
+  injuryStatus?: "healthy" | "injured" | null;
+  injuryRisk?: number | null;
+  team?: string | null;
+}
+
 export interface PlayerQualitySignals {
   careerStrength?: number | null;
   legacyStrength?: number | null;
@@ -54,6 +64,8 @@ export interface PlayerOpportunityContext {
   sport: string;
   lifecycle: PlayerOpportunityLifecycle;
   asOf: string;
+  cardYear?: number;
+  playerProfile?: PlayerProfileSignals;
   sportMarket: SportMarketSnapshot | null;
   qualitySignals?: PlayerQualitySignals;
   demandSignals?: PlayerDemandSignals;
@@ -152,7 +164,9 @@ export interface PlayerCardOpportunity {
   priceToFairValueRatio: number;
 
   riskScore: number;
+  playerRiskScore: number;
   volatilityScore: number;
+  uncertaintyScore: number;
   confidenceScore: number;
 
   recommendation: PlayerCardRecommendation;

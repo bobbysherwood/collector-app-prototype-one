@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { Loader2, Search, SlidersHorizontal } from "lucide-react";
+import {
+  resolveResearchSport,
+  slugifyResearchValue,
+} from "@/lib/market-research/catalog";
 import {
   searchDm2Players,
   searchDm2Sports,
@@ -164,7 +169,7 @@ function Dm2PlayerSearchInput({
         <PortalDropdown rect={dropdownRect}>
           <ul className="max-h-72 overflow-y-auto" role="listbox">
             {results.map((row) => (
-              <li key={row.player} role="option">
+              <li key={row.id} role="option">
                 <button
                   type="button"
                   className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
@@ -174,7 +179,10 @@ function Dm2PlayerSearchInput({
                     onSelectPlayer(row);
                   }}
                 >
-                  <span className="font-medium">{row.player}</span>
+                  <span className="min-w-0">
+                    <span className="block font-medium">{row.player}</span>
+                    <span className="block text-xs text-muted-foreground">{row.sport}</span>
+                  </span>
                   <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                     {row.cardCount} card{row.cardCount === 1 ? "" : "s"}
                   </span>
@@ -306,10 +314,12 @@ function Dm2SportSearchInput({
                   }}
                 >
                   <span className="font-medium">{row.sport}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {row.cardSetCount} set{row.cardSetCount === 1 ? "" : "s"} ·{" "}
-                    {row.cardCount} card{row.cardCount === 1 ? "" : "s"}
-                  </span>
+                  {row.cardSetCount > 0 || row.cardCount > 0 ? (
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {row.cardSetCount} set{row.cardSetCount === 1 ? "" : "s"} ·{" "}
+                      {row.cardCount} card{row.cardCount === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
                 </button>
               </li>
             ))}
@@ -353,6 +363,7 @@ export function MarketResearchSearchPanel({
   selection,
   onSelectionChange,
 }: MarketResearchSearchPanelProps) {
+  const router = useRouter();
   const [searchTab, setSearchTab] = useState<"card" | "player" | "sport">("card");
   const [searchSession, setSearchSession] = useState(0);
 
@@ -365,10 +376,15 @@ export function MarketResearchSearchPanel({
 
   function handleSelectPlayer(player: Dm2PlayerSearchResult) {
     onSelectionChange({ type: "player", player });
+    router.push(`/market-research/players/${player.id}`);
   }
 
   function handleSelectSport(sport: Dm2SportSearchResult) {
     onSelectionChange({ type: "sport", sport });
+    const resolved = resolveResearchSport(sport.sport);
+    router.push(
+      `/market-research/markets/${resolved?.slug ?? slugifyResearchValue(sport.sport)}`
+    );
   }
 
   function handleClear() {

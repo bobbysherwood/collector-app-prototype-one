@@ -1,3 +1,4 @@
+import { TtlCache } from "@/lib/player-stats/cache";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Dm2Brand,
@@ -10,6 +11,8 @@ import type {
   Dm2Attribute,
   Dm2Manufacturer,
   Dm2Parallel,
+  Dm2Player,
+  Dm2ComparableCandidate,
   Dm2CardAttributeAssignment,
 } from "@/types/data-model-v2";
 import { EMPTY_DM2_CARD_FORM_LOOKUPS } from "@/types/data-model-v2";
@@ -138,6 +141,346 @@ export async function getDm2Brands(): Promise<Dm2Brand[]> {
   return (data ?? []).map(mapBrandRow);
 }
 
+const DM2_PLAYER_BASE_SELECT =
+  "id, sport_id, name, image_path, active, created_at, pick_list_options(label)";
+const DM2_PLAYER_PROFILE_SELECT =
+  "id, sport_id, name, image_path, active, created_at, birth_year, career_status, injury_status, team, pick_list_options(label)";
+
+export function isMissingPlayerProfileColumn(message: string): boolean {
+  return /birth_year|career_status|injury_status|column .* does not exist/i.test(message);
+}
+
+type Dm2PlayerRow = {
+  id: string;
+  sport_id: string;
+  name: string;
+  image_path: string | null;
+  active: boolean;
+  created_at: string;
+  birth_year?: number | null;
+  career_status?: "prospect" | "active" | "retired" | "deceased" | null;
+  injury_status?: "healthy" | "injured" | null;
+  team?: string | null;
+  pick_list_options: { label?: string } | { label?: string }[] | null;
+  dm2_card_players?: { count: number }[] | { count: number } | null;
+};
+
+export function mapDm2PlayerRow(row: Dm2PlayerRow): Dm2Player {
+  return {
+    id: row.id,
+    sportId: row.sport_id,
+    sportName: readPickListLabel(row.pick_list_options),
+    name: row.name,
+    imagePath: row.image_path ?? null,
+    active: row.active,
+    createdAt: row.created_at,
+    birthYear: row.birth_year ?? null,
+    careerStatus: row.career_status ?? null,
+    injuryStatus: row.injury_status ?? null,
+    team: row.team ?? null,
+  };
+}
+
+function readEmbeddedCount(
+  value: { count: number }[] | { count: number } | null | undefined
+): number {
+  if (Array.isArray(value)) return Number(value[0]?.count ?? 0);
+  if (value && typeof value === "object" && "count" in value) {
+    return Number(value.count ?? 0);
+  }
+  return 0;
+}
+
+export async function resolveDm2PlayerSelect(): Promise<string> {
+  const supabase = await createClient();
+  const probe = await supabase
+    .from("dm2_players")
+    .select(DM2_PLAYER_PROFILE_SELECT)
+    .order("name", { ascending: true })
+    .range(0, 0);
+
+  if (probe.error && isMissingPlayerProfileColumn(probe.error.message)) {
+    console.warn(
+      "dm2_players profile columns are missing. Run supabase/migrations/055_dm2_player_profile.sql in the Supabase SQL editor."
+    );
+    return DM2_PLAYER_BASE_SELECT;
+  }
+
+  return DM2_PLAYER_PROFILE_SELECT;
+}
+
+export function dm2PlayerSelectHasProfileColumns(select: string): boolean {
+  return select.includes("birth_year");
+}
+
+export async function listDm2PlayersMissingBirthYear(
+  limit = 50
+): Promise<{ error?: string; players: Dm2Player[] }> {
+  const supabase = await createClient();
+  const select = await resolveDm2PlayerSelect();
+  if (!dm2PlayerSelectHasProfileColumns(select)) {
+    return {
+      error:
+        "dm2_players profile columns are missing. Run supabase/migrations/055_dm2_player_profile.sql in the Supabase SQL editor.",
+      players: [],
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("dm2_players")
+    .select(select)
+    .is("birth_year", null)
+    .eq("active", true)
+    .order("name", { ascending: true })
+    .limit(Math.max(1, Math.min(limit, 50)));
+
+  if (error) {
+    if (isMissingPlayerProfileColumn(error.message)) {
+      return {
+        error:
+          "dm2_players profile columns are missing. Run supabase/migrations/055_dm2_player_profile.sql in the Supabase SQL editor.",
+        players: [],
+      };
+    }
+    return { error: error.message, players: [] };
+  }
+
+  return {
+    players: (data as unknown as Dm2PlayerRow[] | null)?.map(mapDm2PlayerRow) ?? [],
+  };
+}
+
+export async function updateDm2PlayerEmptyProfileFields(
+  playerId: string,
+  patch: { birth_year?: number; team?: string; career_status?: string }
+): Promise<{ error?: string; wrote: boolean }> {
+  if (Object.keys(patch).length === 0) return { wrote: false };
+
+  const supabase = await createClient();
+  const rpc = await supabase.rpc("fill_dm2_player_profile_if_empty", {
+    p_player_id: playerId,
+    p_birth_year: patch.birth_year ?? null,
+    p_team: patch.team ?? null,
+    p_career_status: patch.career_status ?? null,
+  });
+
+  if (!rpc.error) {
+    return { wrote: Boolean(rpc.data) };
+  }
+
+  if (/could not find the function|schema cache/i.test(rpc.error.message)) {
+    const { error } = await supabase
+      .from("dm2_players")
+      .update({
+        ...patch,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", playerId);
+
+    if (error && isMissingPlayerProfileColumn(error.message)) {
+      return { wrote: false };
+    }
+    if (error) {
+      return { error: error.message, wrote: false };
+    }
+    return { wrote: true };
+  }
+
+  if (isMissingPlayerProfileColumn(rpc.error.message)) {
+    return { wrote: false };
+  }
+  return { error: rpc.error.message, wrote: false };
+}
+
+export async function getDm2Players(): Promise<Dm2Player[]> {
+  const supabase = await createClient();
+  const select = await resolveDm2PlayerSelect();
+  const data = await fetchAllSupabasePages<Dm2PlayerRow>("dm2 players", async (from, to) => {
+    const result = await supabase
+      .from("dm2_players")
+      .select(select)
+      .order("name", { ascending: true })
+      .range(from, to);
+    return {
+      data: (result.data as unknown as Dm2PlayerRow[] | null) ?? null,
+      error: result.error,
+    };
+  });
+
+  return data.map(mapDm2PlayerRow);
+}
+
+export async function resolveDm2SportId(sportLabel: string): Promise<string | null> {
+  const trimmed = sportLabel.trim();
+  if (!trimmed) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pick_list_options")
+    .select("id")
+    .eq("category", "sport")
+    .ilike("label", trimmed)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to resolve sport id:", error.message);
+    return null;
+  }
+
+  return data?.id ?? null;
+}
+
+const comparablePoolCache = new TtlCache<Dm2ComparableCandidate[]>(15 * 60 * 1000);
+
+export async function listDm2ComparableCandidates(input: {
+  sportId?: string | null;
+  sportLabel?: string | null;
+  excludePlayerId?: string | null;
+  limit?: number;
+}): Promise<Dm2ComparableCandidate[]> {
+  const sportId =
+    input.sportId?.trim() ||
+    (input.sportLabel ? await resolveDm2SportId(input.sportLabel) : null);
+  if (!sportId) return [];
+
+  const excludeId = input.excludePlayerId?.trim() || null;
+  const limit = Math.min(Math.max(input.limit ?? 30, 1), 50);
+  const cached = comparablePoolCache.get(sportId);
+  const pool = cached ?? (await loadDm2ComparableSportPool(sportId));
+  if (!cached) comparablePoolCache.set(sportId, pool);
+
+  return pool
+    .filter((player) => player.id !== excludeId)
+    .slice(0, limit);
+}
+
+async function loadDm2ComparableSportPool(
+  sportId: string
+): Promise<Dm2ComparableCandidate[]> {
+  const supabase = await createClient();
+  const select = await resolveDm2PlayerSelect();
+  const withCounts = `${select}, dm2_card_players(count)`;
+
+  const probe = await supabase
+    .from("dm2_players")
+    .select(withCounts)
+    .eq("sport_id", sportId)
+    .eq("active", true)
+    .range(0, 0);
+
+  const querySelect = probe.error ? select : withCounts;
+  const { data, error } = await supabase
+    .from("dm2_players")
+    .select(querySelect)
+    .eq("sport_id", sportId)
+    .eq("active", true)
+    .order("name", { ascending: true })
+    .range(0, 999);
+
+  if (error) {
+    console.error("Failed to load dm2 comparable candidates:", error.message);
+    return [];
+  }
+
+  return ((data as unknown as Dm2PlayerRow[] | null) ?? [])
+    .map((row) => {
+      const player = mapDm2PlayerRow(row);
+      return {
+        id: player.id,
+        sportId: player.sportId,
+        sportName: player.sportName,
+        name: player.name,
+        imagePath: player.imagePath,
+        birthYear: player.birthYear ?? null,
+        careerStatus: player.careerStatus ?? null,
+        injuryStatus: player.injuryStatus ?? null,
+        team: player.team ?? null,
+        cardCount: readEmbeddedCount(row.dm2_card_players),
+      };
+    })
+    .sort((left, right) => {
+      if (right.cardCount !== left.cardCount) return right.cardCount - left.cardCount;
+      return left.name.localeCompare(right.name);
+    });
+}
+
+export function playerProfileFromDm2(player: {
+  birthYear?: number | null;
+  careerStatus?: "prospect" | "active" | "retired" | "deceased" | null;
+  injuryStatus?: "healthy" | "injured" | null;
+  team?: string | null;
+}) {
+  return {
+    birthYear: player.birthYear ?? null,
+    careerStatus: player.careerStatus ?? null,
+    injuryStatus: player.injuryStatus ?? null,
+    team: player.team ?? null,
+  };
+}
+
+export async function getDm2PlayerCatalogEntries(): Promise<
+  Array<{
+    id: string;
+    sportId: string;
+    name: string;
+    nameKey: string;
+    active: boolean;
+  }>
+> {
+  const supabase = await createClient();
+  const data = await fetchAllSupabasePages<{
+    id: string;
+    sport_id: string;
+    name: string;
+    name_key: string;
+    active: boolean;
+  }>("dm2 player catalog", async (from, to) =>
+    supabase
+      .from("dm2_players")
+      .select("id, sport_id, name, name_key, active")
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+
+  return data.map((row) => ({
+    id: row.id,
+    sportId: row.sport_id,
+    name: row.name,
+    nameKey: row.name_key,
+    active: row.active,
+  }));
+}
+
+export async function getDm2PlayerAliasCatalogEntries(): Promise<
+  Array<{
+    playerId: string;
+    sportId: string;
+    name: string;
+    nameKey: string;
+  }>
+> {
+  const supabase = await createClient();
+  const data = await fetchAllSupabasePages<{
+    player_id: string;
+    sport_id: string;
+    name: string;
+    name_key: string;
+  }>("dm2 player aliases", async (from, to) =>
+    supabase
+      .from("dm2_player_aliases")
+      .select("player_id, sport_id, name, name_key")
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+
+  return data.map((row) => ({
+    playerId: row.player_id,
+    sportId: row.sport_id,
+    name: row.name,
+    nameKey: row.name_key,
+  }));
+}
+
 export async function getDm2Parallels(): Promise<Dm2Parallel[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -247,6 +590,7 @@ function mapCardSetRow(row: {
   card_set_name_id: string;
   active: boolean;
   created_at: string;
+  psa_heading_id?: number | null;
   pick_list_options: unknown;
   dm2_brands: unknown;
   dm2_card_set_categories: unknown;
@@ -268,13 +612,24 @@ function mapCardSetRow(row: {
     cardSetName: readRelatedName(row.dm2_card_set_names),
     active: row.active,
     createdAt: row.created_at,
+    psaHeadingId: row.psa_heading_id ?? null,
   };
 }
 
+const DM2_CARD_SET_BASE_SELECT =
+  "id, sport_id, year, brand_id, card_set_category_id, card_set_name_id, active, created_at, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_categories(name), dm2_card_set_names(name)";
+const DM2_CARD_SET_HEADING_SELECT = `${DM2_CARD_SET_BASE_SELECT}, psa_heading_id`;
+
 export async function getDm2CardSets(): Promise<Dm2CardSet[]> {
   const supabase = await createClient();
+  const headingProbe = await supabase
+    .from("dm2_card_sets")
+    .select("psa_heading_id")
+    .limit(1);
   const cardSetSelect =
-    "id, sport_id, year, brand_id, card_set_category_id, card_set_name_id, active, created_at, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_categories(name), dm2_card_set_names(name)";
+    headingProbe.error && /psa_heading_id|column .* does not exist/i.test(headingProbe.error.message)
+      ? DM2_CARD_SET_BASE_SELECT
+      : DM2_CARD_SET_HEADING_SELECT;
 
   const data = await fetchAllSupabasePages<Parameters<typeof mapCardSetRow>[0]>(
     "dm2 card sets",
@@ -300,11 +655,41 @@ export function formatDm2CardSetLabel(cardSet: {
   return `${cardSet.year} ${cardSet.sportName} · ${cardSet.manufacturerName} | ${cardSet.brandName} · ${cardSet.cardSetName}`;
 }
 
+function mapCardPlayers(value: unknown): { player: string; playerIds: string[] } {
+  const rows = Array.isArray(value) ? value : [];
+  const mapped = rows
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const record = row as {
+        player_id?: string;
+        sort_order?: number;
+        dm2_players?: { id?: string; name?: string } | { id?: string; name?: string }[] | null;
+      };
+      const playerRel = Array.isArray(record.dm2_players)
+        ? record.dm2_players[0]
+        : record.dm2_players;
+      const id = playerRel?.id ?? record.player_id;
+      const name = typeof playerRel?.name === "string" ? playerRel.name : "";
+      if (!id) return null;
+      return {
+        id,
+        name,
+        sortOrder: typeof record.sort_order === "number" ? record.sort_order : 0,
+      };
+    })
+    .filter((row): row is { id: string; name: string; sortOrder: number } => row != null)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
+  return {
+    player: mapped.map((row) => row.name).join("/"),
+    playerIds: mapped.map((row) => row.id),
+  };
+}
+
 function mapCardRow(row: {
   id: string;
   card_set_id: string;
   card_number: string;
-  player: string;
   parallel_id: string | null;
   image_path?: string | null;
   active: boolean;
@@ -312,6 +697,7 @@ function mapCardRow(row: {
   dm2_card_sets: unknown;
   dm2_parallels: unknown;
   dm2_card_attributes?: unknown;
+  dm2_card_players?: unknown;
 }): Dm2Card {
   const cardSetData = Array.isArray(row.dm2_card_sets)
     ? row.dm2_card_sets[0]
@@ -338,13 +724,15 @@ function mapCardRow(row: {
   const parallelName = row.parallel_id
     ? readRelatedName(row.dm2_parallels) || null
     : null;
+  const linkedPlayers = mapCardPlayers(row.dm2_card_players);
 
   return {
     id: row.id,
     cardSetId: row.card_set_id,
     cardSetLabel,
     cardNumber: row.card_number,
-    player: row.player,
+    player: linkedPlayers.player,
+    playerIds: linkedPlayers.playerIds,
     parallelId: row.parallel_id,
     parallelName,
     imagePath: row.image_path ?? null,
@@ -354,7 +742,7 @@ function mapCardRow(row: {
   };
 }
 
-const DM2_SUPABASE_PAGE_SIZE = 1000;
+export const DM2_SUPABASE_PAGE_SIZE = 1000;
 
 async function fetchAllSupabasePages<T>(
   label: string,
@@ -407,7 +795,7 @@ export async function getDm2CardCountsBySetId(): Promise<Record<string, number>>
 export async function getDm2CardsBySetId(cardSetId: string): Promise<Dm2Card[]> {
   const supabase = await createClient();
   const cardSelect =
-    "id, card_set_id, card_number, player, parallel_id, image_path, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name), dm2_card_attributes(id, attribute_id, dm2_attributes(name))";
+    "id, card_set_id, card_number, parallel_id, image_path, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name), dm2_card_attributes(id, attribute_id, dm2_attributes(name)), dm2_card_players(player_id, sort_order, dm2_players(id, name))";
 
   const data = await fetchAllSupabasePages<Parameters<typeof mapCardRow>[0]>(
     `dm2 cards for set ${cardSetId}`,
@@ -426,7 +814,7 @@ export async function getDm2CardsBySetId(cardSetId: string): Promise<Dm2Card[]> 
 export async function getDm2Cards(): Promise<Dm2Card[]> {
   const supabase = await createClient();
   const cardSelect =
-    "id, card_set_id, card_number, player, parallel_id, image_path, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name), dm2_card_attributes(id, attribute_id, dm2_attributes(name))";
+    "id, card_set_id, card_number, parallel_id, image_path, active, created_at, dm2_card_sets(year, pick_list_options(label), dm2_brands(name, dm2_manufacturers(name)), dm2_card_set_names(name)), dm2_parallels(name), dm2_card_attributes(id, attribute_id, dm2_attributes(name)), dm2_card_players(player_id, sort_order, dm2_players(id, name))";
 
   const data = await fetchAllSupabasePages<Parameters<typeof mapCardRow>[0]>(
     "dm2 cards",

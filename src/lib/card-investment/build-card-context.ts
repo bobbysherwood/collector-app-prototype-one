@@ -2,6 +2,8 @@ import { classifyCardArchetype } from "@/lib/card-investment/classification/card
 import { classifyCardEra } from "@/lib/card-investment/classification/card-era";
 import { classifyPlayerLifecycle } from "@/lib/card-investment/classification/player-lifecycle";
 import { fetchSportMarketSnapshot } from "@/lib/card-investment/market/sport-market-client";
+import { inferManufacturer, inferSupplyFromMetadata } from "@/lib/card-investment/scarcity/infer-supply";
+import { latestSaleAsOf } from "@/lib/card-investment/valuation/current-price";
 import { getAsset, getLotsForAsset } from "@/lib/data";
 import { getMockMarketSales } from "@/lib/market-sales/mock-provider";
 import { resolveSportMarketIndexId } from "@/lib/market-index/resolve-sport-index-id";
@@ -16,15 +18,36 @@ export interface BuildCardContextOptions {
   asOf?: string;
   sales?: MarketSale[];
   sportMarketOverride?: CardInvestmentContext["sportMarket"];
+  supply?: CardInvestmentContext["supply"];
 }
 
 function buildClassification(asset: Asset, asOf: string): CardClassification {
   const asOfYear = new Date(asOf).getFullYear();
   return {
     era: classifyCardEra(asset.year, asOfYear),
-    archetype: classifyCardArchetype(asset),
-    lifecycle: classifyPlayerLifecycle(asset),
+    archetype: classifyCardArchetype(asset, asOfYear),
+    lifecycle: classifyPlayerLifecycle(asset, asOfYear),
     sportIndexId: resolveSportMarketIndexId(asset.sport),
+  };
+}
+
+function withInferredFields(
+  asset: Asset,
+  sales: MarketSale[],
+  asOf: string,
+  options: BuildCardContextOptions,
+  sportMarket: CardInvestmentContext["sportMarket"]
+): CardInvestmentContext {
+  const classification = buildClassification(asset, asOf);
+  return {
+    asset,
+    asOf,
+    sales,
+    sportMarket,
+    classification,
+    supply: options.supply ?? inferSupplyFromMetadata(asset, classification.era),
+    manufacturer: inferManufacturer(asset),
+    grader: latestSaleAsOf(sales, asOf)?.grader ?? null,
   };
 }
 
@@ -45,13 +68,7 @@ export async function buildCardInvestmentContext(
       ? options.sportMarketOverride
       : await fetchSportMarketSnapshot(asset.sport);
 
-  return {
-    asset,
-    asOf,
-    sales,
-    sportMarket,
-    classification: buildClassification(asset, asOf),
-  };
+  return withInferredFields(asset, sales, asOf, options, sportMarket);
 }
 
 export async function buildCardInvestmentContextById(
@@ -69,11 +86,5 @@ export function buildCardInvestmentContextSync(
   options: Omit<BuildCardContextOptions, "sales"> = {}
 ): CardInvestmentContext {
   const asOf = options.asOf ?? new Date().toISOString();
-  return {
-    asset,
-    asOf,
-    sales,
-    sportMarket: options.sportMarketOverride ?? null,
-    classification: buildClassification(asset, asOf),
-  };
+  return withInferredFields(asset, sales, asOf, options, options.sportMarketOverride ?? null);
 }

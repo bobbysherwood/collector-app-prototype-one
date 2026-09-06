@@ -12,9 +12,11 @@ export const COMMIT_DETAIL_LIMIT = 200;
 
 const REMEDIES: Record<Dm2ImportCommitErrorCode, string> = {
   pre_commit_validation:
-    "Complete all three review steps (lookups, card sets, cards) and commit each step before saving to the database.",
+    "Complete all four review steps (lookups, players, card sets, cards) and commit each step before saving to the database.",
   lookup_create_failed:
     "Check Admin → Data Model v2 for an existing entry with the same name, or edit the lookup proposal in Validate lookups and try again.",
+  player_create_failed:
+    "Return to Validate players, resolve matching, commit that step, and try the import again.",
   brand_without_manufacturer:
     "In Validate lookups, set the manufacturer to Create new or Use existing before committing the brand.",
   card_set_create_failed:
@@ -56,6 +58,7 @@ export function createCommitStatsCollector(): CommitStatsCollector {
     cardSetCategories: 0,
     cardSetNames: 0,
     parallels: 0,
+    players: 0,
     cardSets: 0,
     cards: 0,
   };
@@ -90,6 +93,7 @@ export function createCommitStatsCollector(): CommitStatsCollector {
       cardSetCategoriesCreated: added.cardSetCategories,
       cardSetNamesCreated: added.cardSetNames,
       parallelsCreated: added.parallels,
+      playersCreated: added.players,
       cardSetsCreated: added.cardSets,
       cardsCreated: added.cards,
       cardsSkipped,
@@ -140,6 +144,8 @@ export function duplicateEntityLabel(
       return `Set name: ${name}`;
     case "parallel":
       return `Parallel: ${name}`;
+    case "player":
+      return `Player: ${name}`;
     case "cardSet":
       return `Card set: ${name}`;
     case "card":
@@ -170,6 +176,7 @@ export function totalAdded(result: Dm2ImportCommitResult): number {
     added.cardSetCategories +
     added.cardSetNames +
     added.parallels +
+    added.players +
     added.cardSets +
     added.cards
   );

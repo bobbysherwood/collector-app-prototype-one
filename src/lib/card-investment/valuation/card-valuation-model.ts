@@ -14,7 +14,16 @@ import type {
   CardMarketValuation,
   ValuationFactor,
 } from "@/types/card-investment";
+import { latestSaleAsOf } from "@/lib/card-investment/valuation/current-price";
 import type { MarketSale } from "@/types/market-sales";
+
+/** Comps used for FMV. The latest in-window print is current price, not a fair-value observation. */
+export function compsForFairValue(sales: MarketSale[], asOf?: string): MarketSale[] {
+  if (sales.length <= 1) return sales;
+  const latest = asOf ? latestSaleAsOf(sales, asOf) : sales[0];
+  if (!latest) return sales;
+  return sales.filter((sale) => sale.id !== latest.id);
+}
 
 function windowMedian(
   sales: MarketSale[],
@@ -67,30 +76,59 @@ export function computeCardValuation(
     };
   }
 
-  const w7 = windowMedian(sales, 7, asOf);
-  const w30 = windowMedian(sales, 30, asOf);
-  const w90 = windowMedian(sales, 90, asOf);
-  const outliersRejected = w7.outliersRejected + w30.outliersRejected + w90.outliersRejected;
+  const comps = compsForFairValue(sales, asOf);
+  const excludedCurrentPrint = comps.length !== sales.length;
+  const factors: ValuationFactor[] = [];
+
+  const w7 = windowMedian(comps, 7, asOf);
+  const w30 = windowMedian(comps, 30, asOf);
+  const w90 = windowMedian(comps, 90, asOf);
+  let outliersRejected = w7.outliersRejected + w30.outliersRejected + w90.outliersRejected;
+
+  let median7d = w7.value;
+  const anchor = w30.value ?? w90.value;
+  if (
+    median7d != null &&
+    anchor != null &&
+    w7.count < 4 &&
+    (median7d / anchor > 1.4 || median7d / anchor < 0.6)
+  ) {
+    median7d = null;
+    outliersRejected += 1;
+    factors.push({
+      key: "thin_window_outlier",
+      label: "Thin 7-day window ignored because it diverged from longer comps",
+      impact: 1,
+      direction: "neutral",
+    });
+  }
 
   const fairValue = blendFairValue(
-    { d7: w7.value, d30: w30.value, d90: w90.value },
+    { d7: median7d, d30: w30.value, d90: w90.value },
     weights.valuation
   );
 
-  const recentCount = filterSalesByWindow(sales, 30, asOf).length;
+  const recentCount = filterSalesByWindow(comps, 30, asOf).length;
   const confidenceScore = valuationConfidenceScore(
-    sales.length,
+    comps.length,
     recentCount,
     outliersRejected
   );
 
-  const factors: ValuationFactor[] = [];
-  if (w7.value != null && w30.value != null && w7.value !== w30.value) {
-    const direction = w7.value > w30.value ? "positive" : "negative";
+  if (excludedCurrentPrint) {
+    factors.push({
+      key: "current_print_excluded",
+      label: "Latest print excluded from fair-value windows",
+      impact: 1,
+      direction: "neutral",
+    });
+  }
+  if (median7d != null && w30.value != null && median7d !== w30.value) {
+    const direction = median7d > w30.value ? "positive" : "negative";
     factors.push({
       key: "recent_momentum",
       label: "7-day median vs 30-day median",
-      impact: Math.abs(((w7.value - w30.value) / w30.value) * 100),
+      impact: Math.abs(((median7d - w30.value) / w30.value) * 100),
       direction,
     });
   }
@@ -105,7 +143,7 @@ export function computeCardValuation(
 
   return {
     fairValue,
-    median7d: w7.value,
+    median7d,
     median30d: w30.value,
     median90d: w90.value,
     confidence: confidenceFromScore(confidenceScore, sales.length > 0),
