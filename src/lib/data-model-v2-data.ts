@@ -636,7 +636,7 @@ export async function getDm2CardSets(): Promise<Dm2CardSet[]> {
     async (from, to) =>
       supabase
         .from("dm2_card_sets")
-        .select(cardSetSelect)
+        .select(cardSetSelect as typeof DM2_CARD_SET_BASE_SELECT)
         .order("year", { ascending: false })
         .order("created_at", { ascending: false })
         .range(from, to)

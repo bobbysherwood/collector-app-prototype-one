@@ -135,7 +135,7 @@ export function opportunitySeriesFromSnapshots(
   snapshots: Array<{ computedAt: string; opportunityScore: number }>,
   current: PlayerOpportunity | null
 ): ResearchSeriesPoint[] {
-  const points = snapshots
+  const points: ResearchSeriesPoint[] = snapshots
     .filter((row) => Number.isFinite(row.opportunityScore))
     .map((row) => {
       const date = new Date(row.computedAt);
@@ -143,7 +143,7 @@ export function opportunitySeriesFromSnapshots(
         date: date.toISOString(),
         label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         value: Math.round(row.opportunityScore * 10) / 10,
-        kind: "history" as const,
+        kind: "history",
       };
     });
 
