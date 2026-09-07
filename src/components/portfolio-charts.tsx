@@ -38,7 +38,7 @@ import {
 import { buildLatestValuationMap } from "@/lib/valuations";
 import { cn } from "@/lib/utils";
 
-interface PortfolioChartsProps {
+export interface PortfolioChartsProps {
   positions: AssetPosition[];
   heldLotPositions: import("@/types/card").HeldLotPosition[];
   lots: import("@/types/card").Lot[];
