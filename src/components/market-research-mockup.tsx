@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MarketResearchSearchPanel } from "@/components/market-research-search-panel";
 import type {
+  Dm2CardSearchResult,
   Dm2PlayerSearchResult,
   Dm2SportSearchResult,
   MarketResearchSearchSelection,
@@ -15,14 +16,20 @@ import type {
 export function MarketResearchMockup({
   activeTab,
   initialQuery = "",
+  initialPage = 1,
   initialPlayers = [],
   initialSports = [],
+  initialCards = [],
+  initialCardTotalCount = 0,
   initialSearchError = null,
 }: {
   activeTab: "card" | "player" | "sport";
   initialQuery?: string;
+  initialPage?: number;
   initialPlayers?: Dm2PlayerSearchResult[];
   initialSports?: Dm2SportSearchResult[];
+  initialCards?: Dm2CardSearchResult[];
+  initialCardTotalCount?: number;
   initialSearchError?: string | null;
 }) {
   const [selection, setSelection] = useState<MarketResearchSearchSelection | null>(
@@ -72,8 +79,11 @@ export function MarketResearchMockup({
         selection={selection}
         onSelectionChange={setSelection}
         initialQuery={initialQuery}
+        initialPage={initialPage}
         initialPlayers={initialPlayers}
         initialSports={initialSports}
+        initialCards={initialCards}
+        initialCardTotalCount={initialCardTotalCount}
         initialSearchError={initialSearchError}
       />
     </div>

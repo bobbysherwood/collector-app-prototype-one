@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { formatDm2CardLabel } from "@/lib/dm2-card-to-asset";
 import { cn } from "@/lib/utils";
 import type {
+  Dm2CardSearchResult,
   Dm2PlayerSearchResult,
   Dm2SportSearchResult,
   MarketResearchSearchSelection,
@@ -345,8 +346,11 @@ interface MarketResearchSearchPanelProps {
   selection: MarketResearchSearchSelection | null;
   onSelectionChange: (selection: MarketResearchSearchSelection | null) => void;
   initialQuery?: string;
+  initialPage?: number;
   initialPlayers?: Dm2PlayerSearchResult[];
   initialSports?: Dm2SportSearchResult[];
+  initialCards?: Dm2CardSearchResult[];
+  initialCardTotalCount?: number;
   initialSearchError?: string | null;
 }
 
@@ -355,8 +359,11 @@ export function MarketResearchSearchPanel({
   selection,
   onSelectionChange,
   initialQuery = "",
+  initialPage = 1,
   initialPlayers = [],
   initialSports = [],
+  initialCards = [],
+  initialCardTotalCount = 0,
   initialSearchError = null,
 }: MarketResearchSearchPanelProps) {
   const router = useRouter();
@@ -424,6 +431,11 @@ export function MarketResearchSearchPanel({
                 className="w-full"
                 inputClassName="bg-background"
                 placeholder="Search players, sets, cards, or parallels…"
+                initialQuery={activeTab === "card" ? initialQuery : ""}
+                initialResults={activeTab === "card" ? initialCards : []}
+                initialTotalCount={activeTab === "card" ? initialCardTotalCount : 0}
+                initialPage={activeTab === "card" ? initialPage : 1}
+                initialError={activeTab === "card" ? initialSearchError : null}
               />
             ) : null}
             {searchTab === "player" ? (
@@ -494,23 +506,21 @@ export function MarketResearchSearchPanel({
                 : searchTab === "player"
                   ? ["Ohtani", "Mahomes", "Wembanyama"]
                   : ["NBA", "Basketball", "Football"]
-              ).map((term) =>
-                searchTab === "card" ? (
-                  <Badge key={term} variant="secondary" className="text-xs">
-                    {term}
-                  </Badge>
-                ) : (
+              ).map((term) => (
                   <Link
                     key={term}
-                    href={`/market-research?tab=${searchTab}&q=${encodeURIComponent(term)}`}
+                    href={
+                      searchTab === "card"
+                        ? `/market-research?q=${encodeURIComponent(term)}`
+                        : `/market-research?tab=${searchTab}&q=${encodeURIComponent(term)}`
+                    }
                     scroll={false}
                   >
                     <Badge variant="secondary" className="text-xs">
                       {term}
                     </Badge>
                   </Link>
-                )
-              )}
+              ))}
             </div>
           )}
         </div>

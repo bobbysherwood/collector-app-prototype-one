@@ -10,10 +10,12 @@ import { Dm2CardAttributeBadges } from "@/components/dm2-card-attribute-badges";
 import { getDm2CardImageUrl } from "@/lib/images";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DM2_CARD_SEARCH_PAGE_SIZE } from "@/types/data-model-v2";
 import type { Dm2CardSearchResult } from "@/types/data-model-v2";
+
+const SEARCH_INPUT_CLASS =
+  "h-10 w-full min-w-0 rounded-xl border border-input bg-background py-2 pl-10 pr-10 text-base shadow-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 md:text-sm";
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -26,6 +28,13 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+function cardSearchHref(query: string, page = 1) {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  if (page > 1) params.set("page", String(page));
+  return `/market-research?${params.toString()}`;
+}
+
 interface Dm2CardSearchTilesProps {
   placeholder?: string;
   className?: string;
@@ -34,6 +43,11 @@ interface Dm2CardSearchTilesProps {
   fixedQuery?: string;
   hideSearchInput?: boolean;
   pageSize?: number;
+  initialQuery?: string;
+  initialResults?: Dm2CardSearchResult[];
+  initialTotalCount?: number;
+  initialPage?: number;
+  initialError?: string | null;
 }
 
 export function Dm2CardSearchTiles({
@@ -43,14 +57,23 @@ export function Dm2CardSearchTiles({
   fixedQuery,
   hideSearchInput = false,
   pageSize = DM2_CARD_SEARCH_PAGE_SIZE,
+  initialQuery = "",
+  initialResults = [],
+  initialTotalCount = 0,
+  initialPage = 1,
+  initialError = null,
 }: Dm2CardSearchTilesProps) {
-  const [query, setQuery] = useState(fixedQuery ?? "");
-  const [results, setResults] = useState<Dm2CardSearchResult[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState(fixedQuery ?? initialQuery);
+  const [results, setResults] = useState<Dm2CardSearchResult[]>(initialResults);
+  const [totalCount, setTotalCount] = useState(initialTotalCount);
+  const [page, setPage] = useState(initialPage);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(initialError);
+  const [searched, setSearched] = useState(
+    (fixedQuery ?? initialQuery).trim().length >= 2 ||
+      initialResults.length > 0 ||
+      Boolean(initialError)
+  );
 
   useEffect(() => {
     if (fixedQuery !== undefined) {
@@ -61,10 +84,16 @@ export function Dm2CardSearchTiles({
 
   const debouncedQuery = useDebouncedValue(query.trim(), fixedQuery ? 0 : 300);
   const canSearch = debouncedQuery.length >= 2;
+  const serverSnapshot =
+    !fixedQuery &&
+    debouncedQuery === initialQuery.trim() &&
+    page === initialPage &&
+    initialQuery.trim().length >= 2;
 
   useEffect(() => {
+    if (debouncedQuery === initialQuery.trim()) return;
     setPage(1);
-  }, [debouncedQuery]);
+  }, [debouncedQuery, initialQuery]);
 
   useEffect(() => {
     if (!canSearch) {
@@ -72,6 +101,15 @@ export function Dm2CardSearchTiles({
       setTotalCount(0);
       setSearched(false);
       setError(null);
+      setLoading(false);
+      return;
+    }
+
+    if (serverSnapshot) {
+      setResults(initialResults);
+      setTotalCount(initialTotalCount);
+      setError(initialError);
+      setSearched(true);
       setLoading(false);
       return;
     }
@@ -109,35 +147,52 @@ export function Dm2CardSearchTiles({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, canSearch, page, pageSize]);
+  }, [
+    canSearch,
+    debouncedQuery,
+    initialError,
+    initialResults,
+    initialTotalCount,
+    page,
+    pageSize,
+    serverSnapshot,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const rangeStart = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, totalCount);
+  const useUrlPaging = !fixedQuery && !hideSearchInput;
 
   return (
     <div className={cn("space-y-4", className)}>
       {!hideSearchInput ? (
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className={cn("pl-10 bg-background", inputClassName)}
-            placeholder={placeholder}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            autoComplete="off"
-          />
-          {loading && (
-            <Loader2 className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-          )}
-        </div>
+        <form method="get" action="/market-research" className="space-y-2">
+          <p className="text-sm font-medium">Card search</p>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className={cn(SEARCH_INPUT_CLASS, inputClassName)}
+              name="q"
+              placeholder={placeholder}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              autoComplete="off"
+            />
+            {loading ? (
+              <Loader2 className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            ) : null}
+          </div>
+          <Button type="submit" className="w-full sm:w-auto">
+            Search cards
+          </Button>
+        </form>
       ) : null}
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {!hideSearchInput && !canSearch && query.trim().length > 0 ? (
         <p className="text-sm text-muted-foreground">
-          Type at least 2 characters to search.
+          Type at least 2 characters to search. Press Search if results do not appear.
         </p>
       ) : null}
 
@@ -162,35 +217,14 @@ export function Dm2CardSearchTiles({
               {totalCount.toLocaleString()} result{totalCount === 1 ? "" : "s"}
             </p>
             {totalPages > 1 ? (
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <span className="min-w-[7rem] text-center text-sm text-muted-foreground tabular-nums">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  disabled={page >= totalPages || loading}
-                  onClick={() =>
-                    setPage((current) => Math.min(totalPages, current + 1))
-                  }
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+              <CardSearchPager
+                page={page}
+                totalPages={totalPages}
+                query={debouncedQuery}
+                loading={loading}
+                useUrlPaging={useUrlPaging}
+                onPageChange={setPage}
+              />
             ) : null}
           </div>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -202,39 +236,95 @@ export function Dm2CardSearchTiles({
           </ul>
           {totalPages > 1 ? (
             <div className="flex justify-center pt-2">
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <span className="min-w-[7rem] text-center text-sm text-muted-foreground tabular-nums">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  disabled={page >= totalPages || loading}
-                  onClick={() =>
-                    setPage((current) => Math.min(totalPages, current + 1))
-                  }
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+              <CardSearchPager
+                page={page}
+                totalPages={totalPages}
+                query={debouncedQuery}
+                loading={loading}
+                useUrlPaging={useUrlPaging}
+                onPageChange={setPage}
+              />
             </div>
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function CardSearchPager({
+  page,
+  totalPages,
+  query,
+  loading,
+  useUrlPaging,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  query: string;
+  loading: boolean;
+  useUrlPaging: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  const prevClass =
+    "inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50";
+
+  return (
+    <div className="flex items-center gap-2">
+      {useUrlPaging ? (
+        page <= 1 ? (
+          <span className={cn(prevClass, "pointer-events-none opacity-50")}>
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </span>
+        ) : (
+          <Link href={cardSearchHref(query, page - 1)} className={prevClass} scroll={false}>
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Link>
+        )
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          disabled={page <= 1 || loading}
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Previous
+        </Button>
+      )}
+      <span className="min-w-[7rem] text-center text-sm text-muted-foreground tabular-nums">
+        Page {page} of {totalPages}
+      </span>
+      {useUrlPaging ? (
+        page >= totalPages ? (
+          <span className={cn(prevClass, "pointer-events-none opacity-50")}>
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </span>
+        ) : (
+          <Link href={cardSearchHref(query, page + 1)} className={prevClass} scroll={false}>
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        )
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          disabled={page >= totalPages || loading}
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+        >
+          Next
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 }
