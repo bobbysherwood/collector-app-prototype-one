@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { Loader2, Search, SlidersHorizontal } from "lucide-react";
@@ -370,24 +371,19 @@ export function formatMarketResearchSelectionLabel(
 }
 
 interface MarketResearchSearchPanelProps {
+  activeTab: "card" | "player" | "sport";
   selection: MarketResearchSearchSelection | null;
   onSelectionChange: (selection: MarketResearchSearchSelection | null) => void;
 }
 
 export function MarketResearchSearchPanel({
+  activeTab,
   selection,
   onSelectionChange,
 }: MarketResearchSearchPanelProps) {
   const router = useRouter();
-  const [searchTab, setSearchTab] = useState<"card" | "player" | "sport">("card");
   const [searchSession, setSearchSession] = useState(0);
-
-  function handleTabChange(value: string) {
-    const next = value as "card" | "player" | "sport";
-    setSearchTab(next);
-    onSelectionChange(null);
-    setSearchSession((session) => session + 1);
-  }
+  const searchTab = activeTab;
 
   function handleSelectPlayer(player: Dm2PlayerSearchResult) {
     onSelectionChange({ type: "player", player });
@@ -410,27 +406,33 @@ export function MarketResearchSearchPanel({
   return (
     <div className="rounded-2xl border border-border/80 bg-card shadow-sm overflow-visible">
       <div className="border-b border-border/80 px-4 pt-4">
-        <div className="flex w-full justify-start gap-1">
+        <div className="flex w-full justify-start gap-1" role="tablist" aria-label="Catalog search">
           {(
             [
-              ["card", "Card"],
-              ["player", "Player"],
-              ["sport", "Sport"],
+              ["card", "Card", "/market-research"],
+              ["player", "Player", "/market-research?tab=player"],
+              ["sport", "Sport", "/market-research?tab=sport"],
             ] as const
-          ).map(([value, label]) => (
-            <button
+          ).map(([value, label, href]) => (
+            <Link
               key={value}
-              type="button"
+              href={href}
+              scroll={false}
+              role="tab"
+              aria-selected={searchTab === value}
               className={cn(
-                "relative inline-flex h-8 items-center justify-center px-3 text-sm font-medium",
+                "relative z-10 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-sm font-medium",
                 searchTab === value
                   ? "text-foreground after:absolute after:inset-x-0 after:bottom-[-1px] after:h-0.5 after:bg-foreground"
                   : "text-foreground/60 hover:text-foreground"
               )}
-              onClick={() => handleTabChange(value)}
+              onClick={() => {
+                onSelectionChange(null);
+                setSearchSession((session) => session + 1);
+              }}
             >
               {label}
-            </button>
+            </Link>
           ))}
         </div>
       </div>
@@ -447,18 +449,24 @@ export function MarketResearchSearchPanel({
               />
             ) : null}
             {searchTab === "player" ? (
-              <Dm2PlayerSearchInput
-                key={`market-player-search-${searchSession}`}
-                className="w-full"
-                onSelectPlayer={handleSelectPlayer}
-              />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Player search</p>
+                <Dm2PlayerSearchInput
+                  key={`market-player-search-${searchSession}`}
+                  className="w-full"
+                  onSelectPlayer={handleSelectPlayer}
+                />
+              </div>
             ) : null}
             {searchTab === "sport" ? (
-              <Dm2SportSearchInput
-                key={`market-sport-search-${searchSession}`}
-                className="w-full"
-                onSelectSport={handleSelectSport}
-              />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Sport search</p>
+                <Dm2SportSearchInput
+                  key={`market-sport-search-${searchSession}`}
+                  className="w-full"
+                  onSelectSport={handleSelectSport}
+                />
+              </div>
             ) : null}
           </div>
 

@@ -400,17 +400,17 @@ export function buildSportAllocation(
 }
 
 export const SPORT_COLORS: Record<string, string> = {
-  Baseball: "oklch(0.52 0.19 265)",
-  Basketball: "oklch(0.58 0.18 45)",
-  Football: "oklch(0.48 0.16 145)",
-  Hockey: "oklch(0.55 0.14 220)",
-  Pokemon: "oklch(0.62 0.2 320)",
-  Soccer: "oklch(0.5 0.12 170)",
-  Other: "oklch(0.55 0.03 265)",
+  Baseball: "#3b6fd9",
+  Basketball: "#e67e22",
+  Football: "#2f9e44",
+  Hockey: "#1c7ed6",
+  Pokemon: "#cc5de8",
+  Soccer: "#0ca678",
+  Other: "#868e96",
 };
 
 export function sportColor(sport: string, index: number): string {
   if (SPORT_COLORS[sport]) return SPORT_COLORS[sport];
   const hue = (index * 47) % 360;
-  return `oklch(0.55 0.15 ${hue})`;
+  return `hsl(${hue} 45% 45%)`;
 }

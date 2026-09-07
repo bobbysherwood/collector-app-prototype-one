@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   CartesianGrid,
   Cell,
@@ -37,6 +37,38 @@ import {
 } from "@/lib/portfolio-history";
 import { buildLatestValuationMap } from "@/lib/valuations";
 import { cn } from "@/lib/utils";
+
+const CHART_GREEN = "#2f9e44";
+
+function ChartFrame({
+  height,
+  children,
+}: {
+  height: number;
+  children: ReactElement;
+}) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(true);
+  }, []);
+
+  if (!ready) {
+    return (
+      <div
+        className="w-full animate-pulse rounded-xl bg-muted"
+        style={{ height }}
+      />
+    );
+  }
+
+  return (
+    <div className="w-full" style={{ width: "100%", height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={1} minHeight={1}>
+        {children}
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 export interface PortfolioChartsProps {
   positions: AssetPosition[];
@@ -133,7 +165,7 @@ export function PortfolioCharts({
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <Card className="min-w-0 h-full lg:col-span-8">
+      <Card className="min-w-0 overflow-visible lg:col-span-8">
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base font-medium">
             Portfolio Performance
@@ -183,47 +215,45 @@ export function PortfolioCharts({
 
           {history.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">
-              Add cards to see portfolio history.
+              {heldLotPositions.length > 0
+                ? "Not enough valuation history to plot this range."
+                : "Add cards to see portfolio history."}
             </p>
           ) : (
-            <div className="h-[360px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={history}
-                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 12 }}
-                    className="text-muted-foreground"
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(v) =>
-                      v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
-                    }
-                    className="text-muted-foreground"
-                  />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="returns"
-                    name="Returns"
-                    stroke="oklch(0.58 0.18 145)"
-                    strokeWidth={2.5}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <ChartFrame height={360}>
+              <LineChart
+                data={history}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d8" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 12, fill: "#71717a" }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 12, fill: "#71717a" }}
+                  tickFormatter={(v) =>
+                    v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
+                  }
+                />
+                <Tooltip content={<ChartTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="returns"
+                  name="Returns"
+                  stroke={CHART_GREEN}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+            </ChartFrame>
           )}
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 h-full lg:col-span-4">
+      <Card className="min-w-0 overflow-visible lg:col-span-4">
         <CardHeader>
           <CardTitle className="text-base font-medium">
             Allocation by Sport
@@ -236,27 +266,25 @@ export function PortfolioCharts({
             </p>
           ) : (
             <div className="flex flex-col items-center gap-4">
-              <div className="h-[200px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="sport"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={44}
-                      outerRadius={72}
-                      paddingAngle={2}
-                    >
-                      {pieData.map((entry) => (
-                        <Cell key={entry.sport} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<PieTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+              <ChartFrame height={200}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="sport"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={44}
+                    outerRadius={72}
+                    paddingAngle={2}
+                  >
+                    {pieData.map((entry) => (
+                      <Cell key={entry.sport} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<PieTooltip />} />
+                </PieChart>
+              </ChartFrame>
               <div className="w-full overflow-x-auto">
                 <Table>
                   <TableHeader>

@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import { MarketResearchSearchPanel } from "@/components/market-research-search-panel";
 import type { MarketResearchSearchSelection } from "@/types/data-model-v2";
 
-export function MarketResearchMockup() {
+export function MarketResearchMockup({
+  activeTab,
+}: {
+  activeTab: "card" | "player" | "sport";
+}) {
   const [selection, setSelection] = useState<MarketResearchSearchSelection | null>(
     null
   );
@@ -52,6 +56,7 @@ export function MarketResearchMockup() {
       </div>
 
       <MarketResearchSearchPanel
+        activeTab={activeTab}
         selection={selection}
         onSelectionChange={setSelection}
       />
