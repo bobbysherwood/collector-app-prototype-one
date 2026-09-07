@@ -3,17 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Layers, LineChart, Plus, LogOut, Shield, User } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { signOut } from "@/app/actions/auth";
+import { cn } from "@/lib/utils";
 
 interface AppNavProps {
   email: string;
@@ -33,10 +25,7 @@ export function AppNav({
     pathname === "/cards/new" || /^\/cards\/[^/]+\/edit$/.test(pathname);
 
   return (
-    <header
-      data-shell="app-nav-20260907"
-      className="sticky top-0 z-50 border-b border-border/80 bg-card/90 shadow-sm backdrop-blur-md"
-    >
+    <header className="sticky top-0 z-50 border-b border-border/80 bg-card/90 shadow-sm backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-8">
           <Link href="/dashboard" className="flex items-center gap-3">
@@ -77,17 +66,6 @@ export function AppNav({
                 <span className="hidden sm:inline">Market Research</span>
               </Button>
             ) : null}
-            {isAdmin ? (
-              <Button
-                render={<Link href="/admin/users" />}
-                nativeButton={false}
-                variant="ghost"
-                className="gap-2"
-              >
-                <Shield className="h-4 w-4" />
-                <span className="hidden sm:inline">Admin</span>
-              </Button>
-            ) : null}
           </nav>
         </div>
         <div className="flex items-center gap-3">
@@ -97,61 +75,48 @@ export function AppNav({
               <span className="hidden sm:inline">Add Asset</span>
             </Button>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="outline-none"
-              render={
-                <Button
-                  variant="outline"
-                  className="max-w-[200px] truncate"
-                />
-              }
+          <details className="relative">
+            <summary
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "max-w-[200px] cursor-pointer list-none truncate [&::-webkit-details-marker]:hidden"
+              )}
             >
               {displayName}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="font-normal">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{displayName}</p>
-                    <p className="text-xs text-muted-foreground truncate">{email}</p>
-                  </div>
-                </DropdownMenuLabel>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                {isAdmin ? (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    render={<Link href="/admin/users" />}
-                  >
-                    <Shield className="h-4 w-4" />
-                    Admin Screen
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  render={<Link href="/profile" />}
+            </summary>
+            <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md">
+              <div className="px-2 py-1.5">
+                <p className="truncate text-sm font-medium">{displayName}</p>
+                <p className="truncate text-xs text-muted-foreground">{email}</p>
+              </div>
+              <div className="my-1 h-px bg-border" />
+              {isAdmin ? (
+                <Link
+                  href="/admin/users"
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
                 >
-                  <User className="h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => {
-                    const form = document.getElementById(
-                      "sign-out-form"
-                    ) as HTMLFormElement;
-                    form?.requestSubmit();
-                  }}
+                  <Shield className="h-4 w-4" />
+                  Admin
+                </Link>
+              ) : null}
+              <Link
+                href="/profile"
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+              >
+                <User className="h-4 w-4" />
+                Profile
+              </Link>
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                 >
                   <LogOut className="h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <form id="sign-out-form" action={signOut} className="hidden" />
+                  Log Out
+                </button>
+              </form>
+            </div>
+          </details>
         </div>
       </div>
     </header>
