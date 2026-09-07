@@ -157,8 +157,8 @@ export interface CardResearchPageData {
   };
 }
 
-const PLAYER_CATALOG_PAGE_SIZE = 100;
-const PLAYER_CATALOG_MAX_CARDS = 2000;
+const PLAYER_CATALOG_PAGE_SIZE = 24;
+const PLAYER_CATALOG_MAX_CARDS = 48;
 const PLAYER_CATALOG_SCORE_LIMIT = 80;
 
 function previewFromCard(

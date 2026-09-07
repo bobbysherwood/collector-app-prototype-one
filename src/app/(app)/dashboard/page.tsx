@@ -6,24 +6,35 @@ import { PortfolioPerformanceLeaders } from "@/components/portfolio-performance-
 import { getAiFeatureSettings } from "@/lib/ai-feature-settings";
 import { getPortfolioChartData } from "@/lib/data";
 
+const EMPTY_CHART_DATA = {
+  assets: [],
+  lots: [],
+  sales: [],
+  valuations: [],
+  positions: [],
+  heldLotPositions: [],
+  heldPositions: [],
+  topPerformers: [],
+  underperformers: [],
+};
+
 export default async function DashboardPage() {
-  const [aiFeatureSettings, chartData] = await Promise.all([
+  const [aiFeatureSettings, chartResult] = await Promise.all([
     getAiFeatureSettings(),
-    getPortfolioChartData().catch((error) => {
-      console.error("Failed to load dashboard chart data:", error);
-      return {
-        assets: [],
-        lots: [],
-        sales: [],
-        valuations: [],
-        positions: [],
-        heldLotPositions: [],
-        heldPositions: [],
-        topPerformers: [],
-        underperformers: [],
-      };
-    }),
+    getPortfolioChartData()
+      .then((chartData) => ({ chartData, error: null as string | null }))
+      .catch((error) => {
+        console.error("Failed to load dashboard chart data:", error);
+        return {
+          chartData: EMPTY_CHART_DATA,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Portfolio charts could not be loaded.",
+        };
+      }),
   ]);
+  const { chartData, error: chartError } = chartResult;
 
   return (
     <div className="space-y-8">
@@ -33,6 +44,12 @@ export default async function DashboardPage() {
           Overview of your sports card investments
         </p>
       </div>
+
+      {chartError ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Charts could not load: {chartError}
+        </div>
+      ) : null}
 
       <PortfolioChartsClient
         positions={chartData.positions}

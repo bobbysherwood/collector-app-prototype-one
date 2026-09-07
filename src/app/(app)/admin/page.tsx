@@ -7,6 +7,8 @@ import { parseAdminSection, type AdminSection } from "@/lib/admin-sections";
 import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
 
+export const maxDuration = 60;
+
 interface AdminPageProps {
   searchParams: Promise<{ section?: string }>;
 }

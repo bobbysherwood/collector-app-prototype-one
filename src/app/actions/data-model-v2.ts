@@ -2029,49 +2029,19 @@ export async function searchDm2Cards(
     }
   }
 
-  const offset = (page - 1) * pageSize;
-
-  let { data, error } = await supabase.rpc("search_dm2_cards", {
-    query: trimmed,
-    lim: pageSize,
-    row_offset: offset,
-  });
-
-  let usesLegacySearch = false;
-  if (error && /Could not find the function public\.search_dm2_cards/i.test(error.message)) {
-    if (page > 1 || offset > 0) {
-      return {
-        error:
-          "Paginated card search is not available yet. Run migration 044 in the Supabase SQL editor, then open Settings → API and reload the schema cache.",
-      };
-    }
-
-    ({ data, error } = await supabase.rpc("search_dm2_cards", {
-      query: trimmed,
-      lim: pageSize,
-    }));
-    usesLegacySearch = true;
+  try {
+    const { searchHydratedCards } = await import("@/lib/dm2-catalog-search");
+    const result = await searchHydratedCards(supabase, trimmed, { page, pageSize });
+    return {
+      cards: result.cards,
+      totalCount: result.totalCount,
+      page,
+      pageSize,
+    };
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "Card search failed.";
+    return { error: formatCatalogSearchError(message) };
   }
-
-  if (error) {
-    return { error: formatCatalogSearchError(error.message) };
-  }
-
-  const rows = normalizeRpcRows(data);
-  const totalCount = usesLegacySearch
-    ? rows.length
-    : rows.length > 0
-      ? Number((rows[0] as { total_count?: number }).total_count ?? 0)
-      : 0;
-
-  return {
-    cards: rows.map((row) =>
-      mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
-    ),
-    totalCount,
-    page,
-    pageSize,
-  };
 }
 
 function mapDm2CardSearchRow(row: {
@@ -2238,26 +2208,34 @@ export async function listDm2CardsForSport(
 
   const pageSize = Math.min(Math.max(options?.pageSize ?? DM2_CARD_SEARCH_PAGE_SIZE, 1), 100);
   const page = Math.max(options?.page ?? 1, 1);
-  const { data, error } = await supabase.rpc("get_dm2_cards_for_sport", {
-    p_sport_id: trimmed,
-    lim: pageSize,
-    row_offset: (page - 1) * pageSize,
-  });
-
-  if (error) {
-    return { error: formatCatalogSearchError(error.message) };
+  try {
+    const { listHydratedCardsForSport } = await import("@/lib/dm2-catalog-search");
+    const result = await listHydratedCardsForSport(supabase, trimmed, { page, pageSize });
+    return {
+      cards: result.cards,
+      totalCount: result.totalCount,
+    };
+  } catch (caught) {
+    const { data, error } = await supabase.rpc("get_dm2_cards_for_sport", {
+      p_sport_id: trimmed,
+      lim: pageSize,
+      row_offset: (page - 1) * pageSize,
+    });
+    if (error) {
+      const message = caught instanceof Error ? caught.message : error.message;
+      return { error: formatCatalogSearchError(message) };
+    }
+    const rows = normalizeRpcRows(data);
+    return {
+      cards: rows.map((row) =>
+        mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
+      ),
+      totalCount:
+        rows.length > 0
+          ? Number((rows[0] as { total_count?: number }).total_count ?? rows.length)
+          : 0,
+    };
   }
-
-  const rows = normalizeRpcRows(data);
-  return {
-    cards: rows.map((row) =>
-      mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
-    ),
-    totalCount:
-      rows.length > 0
-        ? Number((rows[0] as { total_count?: number }).total_count ?? rows.length)
-        : 0,
-  };
 }
 
 export async function listDm2CardsForPlayer(
@@ -2283,26 +2261,34 @@ export async function listDm2CardsForPlayer(
 
   const pageSize = Math.min(Math.max(options?.pageSize ?? DM2_CARD_SEARCH_PAGE_SIZE, 1), 100);
   const page = Math.max(options?.page ?? 1, 1);
-  const { data, error } = await supabase.rpc("get_dm2_cards_for_player", {
-    p_player_id: trimmed,
-    lim: pageSize,
-    row_offset: (page - 1) * pageSize,
-  });
-
-  if (error) {
-    return { error: error.message };
+  try {
+    const { listHydratedCardsForPlayer } = await import("@/lib/dm2-catalog-search");
+    const result = await listHydratedCardsForPlayer(supabase, trimmed, { page, pageSize });
+    return {
+      cards: result.cards,
+      totalCount: result.totalCount,
+    };
+  } catch (caught) {
+    const { data, error } = await supabase.rpc("get_dm2_cards_for_player", {
+      p_player_id: trimmed,
+      lim: pageSize,
+      row_offset: (page - 1) * pageSize,
+    });
+    if (error) {
+      const message = caught instanceof Error ? caught.message : error.message;
+      return { error: formatCatalogSearchError(message) };
+    }
+    const rows = normalizeRpcRows(data);
+    return {
+      cards: rows.map((row) =>
+        mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
+      ),
+      totalCount:
+        rows.length > 0
+          ? Number((rows[0] as { total_count?: number }).total_count ?? rows.length)
+          : 0,
+    };
   }
-
-  const rows = normalizeRpcRows(data);
-  return {
-    cards: rows.map((row) =>
-      mapDm2CardSearchRow(row as Parameters<typeof mapDm2CardSearchRow>[0])
-    ),
-    totalCount:
-      rows.length > 0
-        ? Number((rows[0] as { total_count?: number }).total_count ?? rows.length)
-        : 0,
-  };
 }
 
 export async function resolveDm2PlayerForHoldings(input: {
@@ -2387,34 +2373,38 @@ export async function searchDm2Players(
     return { error: "You must be signed in to search the card catalog." };
   }
 
-  const { data, error } = await supabase.rpc("search_dm2_players", {
-    query: trimmed,
-    lim: 50,
-  });
-
-  if (error) {
-    return { error: error.message };
+  try {
+    const { searchPlayersByName } = await import("@/lib/dm2-catalog-search");
+    return { players: await searchPlayersByName(supabase, trimmed) };
+  } catch (caught) {
+    const { data, error } = await supabase.rpc("search_dm2_players", {
+      query: trimmed,
+      lim: 50,
+    });
+    if (error) {
+      const message = caught instanceof Error ? caught.message : error.message;
+      return { error: formatCatalogSearchError(message) };
+    }
+    return {
+      players: normalizeRpcRows(data).map(
+        (row: {
+          id: string;
+          player: string;
+          sport: string;
+          sport_id: string;
+          image_path: string | null;
+          card_count: number;
+        }) => ({
+          id: row.id,
+          player: row.player,
+          sport: row.sport,
+          sportId: row.sport_id,
+          imagePath: row.image_path ?? null,
+          cardCount: Number(row.card_count),
+        })
+      ),
+    };
   }
-
-  return {
-    players: normalizeRpcRows(data).map(
-      (row: {
-        id: string;
-        player: string;
-        sport: string;
-        sport_id: string;
-        image_path: string | null;
-        card_count: number;
-      }) => ({
-        id: row.id,
-        player: row.player,
-        sport: row.sport,
-        sportId: row.sport_id,
-        imagePath: row.image_path ?? null,
-        cardCount: Number(row.card_count),
-      })
-    ),
-  };
 }
 
 export async function searchDm2Sports(
