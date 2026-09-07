@@ -5,6 +5,7 @@ import {
   pickUniqueSearchSport,
   sportLabelMatchesQuery,
 } from "@/lib/dm2-card-search";
+import { parseDashboardRange } from "@/lib/portfolio-history";
 
 describe("pickUniqueSearchPlayer", () => {
   const lebron = { id: "lbj", player: "LeBron James" };
@@ -82,5 +83,16 @@ describe("sportLabelMatchesQuery", () => {
 
   it("does not match football against Basketball", () => {
     expect(sportLabelMatchesQuery("Basketball", "football")).toBe(false);
+  });
+});
+
+describe("parseDashboardRange", () => {
+  it("uses 3y when the range is missing or unknown", () => {
+    expect(parseDashboardRange(undefined)).toBe("3y");
+    expect(parseDashboardRange("week")).toBe("3y");
+  });
+
+  it("accepts a valid range", () => {
+    expect(parseDashboardRange("1y")).toBe("1y");
   });
 });

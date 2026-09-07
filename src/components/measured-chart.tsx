@@ -26,7 +26,7 @@ export function MeasuredChart({
       {cloneElement(children, {
         width: 640,
         height,
-        responsive: true,
+        responsive: false,
       })}
     </div>
   );

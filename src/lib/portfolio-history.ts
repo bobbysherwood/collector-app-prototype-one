@@ -17,6 +17,15 @@ export const TIME_RANGES: { key: TimeRangeKey; label: string }[] = [
   { key: "max", label: "Max" },
 ];
 
+export function parseDashboardRange(
+  value: string | string[] | undefined
+): TimeRangeKey {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return TIME_RANGES.some((range) => range.key === raw)
+    ? (raw as TimeRangeKey)
+    : "3y";
+}
+
 export interface PortfolioHistoryPoint {
   date: string;
   label: string;

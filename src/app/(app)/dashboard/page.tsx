@@ -1,10 +1,18 @@
 import { Suspense } from "react";
-import { PortfolioCharts } from "@/components/portfolio-charts";
+import { PortfolioStaticCharts } from "@/components/portfolio-static-charts";
 import { PortfolioInsightsLoader } from "@/components/portfolio-insights-loader";
 import { PortfolioInsightsLoading } from "@/components/portfolio-insights-loading";
 import { PortfolioPerformanceLeaders } from "@/components/portfolio-performance-leaders";
 import { getAiFeatureSettings } from "@/lib/ai-feature-settings";
 import { getPortfolioChartData } from "@/lib/data";
+import {
+  buildPortfolioHistory,
+  buildSportAllocation,
+  getPeriodSummary,
+  parseDashboardRange,
+  sportColor,
+} from "@/lib/portfolio-history";
+import { buildLatestValuationMap } from "@/lib/valuations";
 
 const EMPTY_CHART_DATA = {
   assets: [],
@@ -18,7 +26,12 @@ const EMPTY_CHART_DATA = {
   underperformers: [],
 };
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams: Promise<{ range?: string | string[] }>;
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const timeRange = parseDashboardRange((await searchParams).range);
   const [aiFeatureSettings, chartResult] = await Promise.all([
     getAiFeatureSettings(),
     getPortfolioChartData()
@@ -35,6 +48,25 @@ export default async function DashboardPage() {
       }),
   ]);
   const { chartData, error: chartError } = chartResult;
+  const history = buildPortfolioHistory(
+    chartData.positions,
+    chartData.valuations,
+    chartData.lots,
+    timeRange
+  );
+  const periodSummary = getPeriodSummary(
+    chartData.positions,
+    chartData.valuations,
+    chartData.lots,
+    timeRange
+  );
+  const pieData = buildSportAllocation(
+    chartData.heldLotPositions,
+    buildLatestValuationMap(chartData.valuations)
+  ).map((slice, index) => ({
+    ...slice,
+    fill: sportColor(slice.sport, index),
+  }));
 
   return (
     <div className="space-y-8">
@@ -51,11 +83,12 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      <PortfolioCharts
-        positions={chartData.positions}
-        heldLotPositions={chartData.heldLotPositions}
-        lots={chartData.lots}
-        valuations={chartData.valuations}
+      <PortfolioStaticCharts
+        history={history}
+        periodSummary={periodSummary}
+        pieData={pieData}
+        heldCount={chartData.heldLotPositions.length}
+        timeRange={timeRange}
       />
 
       {aiFeatureSettings.portfolioInsightsEnabled ? (

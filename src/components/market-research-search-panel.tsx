@@ -156,9 +156,9 @@ function Dm2PlayerSearchInput({
         loading={loading}
         expanded={showResults}
       />
-      <button type="submit" className="text-sm font-medium text-primary hover:underline">
-        Search
-      </button>
+      <Button type="submit" className="w-full sm:w-auto">
+        Search players
+      </Button>
 
       {showResults ? (
         <div className="rounded-lg border border-border bg-popover py-1 shadow-md">
@@ -279,9 +279,9 @@ function Dm2SportSearchInput({
         loading={loading}
         expanded={showResults}
       />
-      <button type="submit" className="text-sm font-medium text-primary hover:underline">
-        Search
-      </button>
+      <Button type="submit" className="w-full sm:w-auto">
+        Search sports
+      </Button>
 
       {showResults ? (
         <div className="rounded-lg border border-border bg-popover py-1 shadow-md">
@@ -493,12 +493,24 @@ export function MarketResearchSearchPanel({
                 ? ["Wembanyama", "Prizm", "2024", "Fast Break"]
                 : searchTab === "player"
                   ? ["Ohtani", "Mahomes", "Wembanyama"]
-                  : ["Basketball", "Baseball", "Football"]
-              ).map((term) => (
-                <Badge key={term} variant="secondary" className="text-xs">
-                  {term}
-                </Badge>
-              ))}
+                  : ["NBA", "Basketball", "Football"]
+              ).map((term) =>
+                searchTab === "card" ? (
+                  <Badge key={term} variant="secondary" className="text-xs">
+                    {term}
+                  </Badge>
+                ) : (
+                  <Link
+                    key={term}
+                    href={`/market-research?tab=${searchTab}&q=${encodeURIComponent(term)}`}
+                    scroll={false}
+                  >
+                    <Badge variant="secondary" className="text-xs">
+                      {term}
+                    </Badge>
+                  </Link>
+                )
+              )}
             </div>
           )}
         </div>
