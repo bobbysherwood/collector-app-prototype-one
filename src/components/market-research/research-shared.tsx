@@ -19,11 +19,11 @@ import {
   PolarGrid,
   Radar,
   RadarChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { MeasuredChart } from "@/components/measured-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -310,8 +310,8 @@ export function ResearchLineChart({
   }
 
   return (
-    <div className="relative h-[240px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="relative w-full">
+      <MeasuredChart height={240}>
         <LineChart data={withForecast} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis dataKey="label" tick={{ fontSize: 11 }} />
@@ -339,7 +339,7 @@ export function ResearchLineChart({
             connectNulls
           />
         </LineChart>
-      </ResponsiveContainer>
+      </MeasuredChart>
       {currentValue != null && historyIndexes.length > 0 ? (
         <div className="pointer-events-none absolute right-4 top-3 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">
           {currentValue}
@@ -364,9 +364,8 @@ export function ResearchForecastChart({
   }
 
   return (
-    <div className="h-[180px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+    <MeasuredChart height={180}>
+      <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis dataKey="label" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} width={36} />
@@ -378,8 +377,7 @@ export function ResearchForecastChart({
             fill="#05966922"
           />
         </AreaChart>
-      </ResponsiveContainer>
-    </div>
+    </MeasuredChart>
   );
 }
 
@@ -573,9 +571,8 @@ export function ResearchRadar({
   }
 
   return (
-    <div className="h-[240px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={dimensions}>
+    <MeasuredChart height={240}>
+      <RadarChart data={dimensions}>
           <PolarGrid />
           <PolarAngleAxis dataKey="label" tick={{ fontSize: 11 }} />
           <Radar
@@ -586,8 +583,7 @@ export function ResearchRadar({
           />
           <Tooltip />
         </RadarChart>
-      </ResponsiveContainer>
-    </div>
+    </MeasuredChart>
   );
 }
 

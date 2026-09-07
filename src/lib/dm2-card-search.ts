@@ -51,6 +51,27 @@ export function pickUniqueSearchSport<T extends { id: string; label: string }>(
   return pickUniqueLabeledMatch(query, sports, (sport) => sport.label);
 }
 
+const SPORT_SEARCH_ALIASES: Record<string, string[]> = {
+  basketball: ["nba", "hoops"],
+  football: ["nfl"],
+  baseball: ["mlb"],
+  hockey: ["nhl"],
+  soccer: ["mls", "futbol", "football soccer"],
+};
+
+export function sportSearchHaystack(label: string): string {
+  const key = label.trim().toLowerCase();
+  const aliases = SPORT_SEARCH_ALIASES[key] ?? [];
+  return [label, ...aliases].join(" ").toLowerCase();
+}
+
+export function sportLabelMatchesQuery(label: string, query: string): boolean {
+  const tokens = cardSearchTokens(query);
+  if (tokens.length === 0) return false;
+  const haystack = sportSearchHaystack(label);
+  return tokens.every((token) => haystack.includes(token));
+}
+
 export function formatCatalogSearchError(message: string): string {
   if (/timeout|canceling statement/i.test(message)) {
     return "The card catalog timed out for this search. Try a more specific query.";

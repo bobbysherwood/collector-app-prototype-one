@@ -10,10 +10,10 @@ import { normalizeRpcRows } from "@/lib/supabase/rpc-rows";
 import { getUserProfile } from "@/lib/data";
 import { isAdminRole } from "@/types/user";
 import {
-  cardSearchTokens,
   formatCatalogSearchError,
   pickUniqueSearchPlayer,
   pickUniqueSearchSport,
+  sportLabelMatchesQuery,
 } from "@/lib/dm2-card-search";
 import { DM2_CARD_SEARCH_PAGE_SIZE } from "@/types/data-model-v2";
 import {
@@ -2377,33 +2377,8 @@ export async function searchDm2Players(
     const { searchPlayersByName } = await import("@/lib/dm2-catalog-search");
     return { players: await searchPlayersByName(supabase, trimmed) };
   } catch (caught) {
-    const { data, error } = await supabase.rpc("search_dm2_players", {
-      query: trimmed,
-      lim: 50,
-    });
-    if (error) {
-      const message = caught instanceof Error ? caught.message : error.message;
-      return { error: formatCatalogSearchError(message) };
-    }
-    return {
-      players: normalizeRpcRows(data).map(
-        (row: {
-          id: string;
-          player: string;
-          sport: string;
-          sport_id: string;
-          image_path: string | null;
-          card_count: number;
-        }) => ({
-          id: row.id,
-          player: row.player,
-          sport: row.sport,
-          sportId: row.sport_id,
-          imagePath: row.image_path ?? null,
-          cardCount: Number(row.card_count),
-        })
-      ),
-    };
+    const message = caught instanceof Error ? caught.message : "Player search failed.";
+    return { error: formatCatalogSearchError(message) };
   }
 }
 
@@ -2424,7 +2399,6 @@ export async function searchDm2Sports(
     return { error: "You must be signed in to search the card catalog." };
   }
 
-  const tokens = cardSearchTokens(trimmed);
   const { data, error } = await supabase
     .from("pick_list_options")
     .select("label")
@@ -2437,9 +2411,7 @@ export async function searchDm2Sports(
   }
 
   const sports = (data ?? [])
-    .filter((row) =>
-      tokens.every((token) => row.label.toLowerCase().includes(token))
-    )
+    .filter((row) => sportLabelMatchesQuery(row.label, trimmed))
     .sort((a, b) => a.label.localeCompare(b.label))
     .slice(0, 50)
     .map((row) => ({

@@ -6,11 +6,11 @@ import {
   Legend,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { MeasuredChart } from "@/components/measured-chart";
 import { formatCurrency } from "@/types/card";
 import {
   MARKET_SALE_SOURCE_LABELS,
@@ -74,9 +74,8 @@ export function MarketSalesChart({ sales }: MarketSalesChartProps) {
   }
 
   return (
-    <div className="h-[280px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
+    <MeasuredChart height={280}>
+      <LineChart
           data={chartData}
           margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
         >
@@ -130,7 +129,6 @@ export function MarketSalesChart({ sales }: MarketSalesChartProps) {
             activeDot={{ r: 5 }}
           />
         </LineChart>
-      </ResponsiveContainer>
-    </div>
+    </MeasuredChart>
   );
 }

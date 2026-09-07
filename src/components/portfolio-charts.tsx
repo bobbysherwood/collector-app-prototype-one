@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Cell,
@@ -8,11 +8,11 @@ import {
   LineChart,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { MeasuredChart } from "@/components/measured-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -39,36 +39,6 @@ import { buildLatestValuationMap } from "@/lib/valuations";
 import { cn } from "@/lib/utils";
 
 const CHART_GREEN = "#2f9e44";
-
-function ChartFrame({
-  height,
-  children,
-}: {
-  height: number;
-  children: ReactElement;
-}) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    setReady(true);
-  }, []);
-
-  if (!ready) {
-    return (
-      <div
-        className="w-full animate-pulse rounded-xl bg-muted"
-        style={{ height }}
-      />
-    );
-  }
-
-  return (
-    <div className="w-full" style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height={height} minWidth={1} minHeight={1}>
-        {children}
-      </ResponsiveContainer>
-    </div>
-  );
-}
 
 export interface PortfolioChartsProps {
   positions: AssetPosition[];
@@ -220,7 +190,7 @@ export function PortfolioCharts({
                 : "Add cards to see portfolio history."}
             </p>
           ) : (
-            <ChartFrame height={360}>
+            <MeasuredChart height={360}>
               <LineChart
                 data={history}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -248,7 +218,7 @@ export function PortfolioCharts({
                   activeDot={{ r: 4 }}
                 />
               </LineChart>
-            </ChartFrame>
+            </MeasuredChart>
           )}
         </CardContent>
       </Card>
@@ -266,7 +236,7 @@ export function PortfolioCharts({
             </p>
           ) : (
             <div className="flex flex-col items-center gap-4">
-              <ChartFrame height={200}>
+              <MeasuredChart height={200}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -284,7 +254,7 @@ export function PortfolioCharts({
                   </Pie>
                   <Tooltip content={<PieTooltip />} />
                 </PieChart>
-              </ChartFrame>
+              </MeasuredChart>
               <div className="w-full overflow-x-auto">
                 <Table>
                   <TableHeader>

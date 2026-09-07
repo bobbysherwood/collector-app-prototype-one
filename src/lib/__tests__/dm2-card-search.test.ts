@@ -3,6 +3,7 @@ import {
   formatCatalogSearchError,
   pickUniqueSearchPlayer,
   pickUniqueSearchSport,
+  sportLabelMatchesQuery,
 } from "@/lib/dm2-card-search";
 
 describe("pickUniqueSearchPlayer", () => {
@@ -59,5 +60,27 @@ describe("formatCatalogSearchError", () => {
         "structure of query does not match function result type"
       )
     ).toMatch(/064_dm2_cards_search_cast_fix\.sql/);
+  });
+});
+
+describe("sportLabelMatchesQuery", () => {
+  it("matches NBA to Basketball", () => {
+    expect(sportLabelMatchesQuery("Basketball", "nba")).toBe(true);
+  });
+
+  it("matches NFL to Football", () => {
+    expect(sportLabelMatchesQuery("Football", "nfl")).toBe(true);
+  });
+
+  it("matches MLB to Baseball", () => {
+    expect(sportLabelMatchesQuery("Baseball", "mlb")).toBe(true);
+  });
+
+  it("matches NHL to Hockey", () => {
+    expect(sportLabelMatchesQuery("Hockey", "nhl")).toBe(true);
+  });
+
+  it("does not match football against Basketball", () => {
+    expect(sportLabelMatchesQuery("Basketball", "football")).toBe(false);
   });
 });

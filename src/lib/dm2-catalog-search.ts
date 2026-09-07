@@ -100,14 +100,15 @@ export async function searchPlayersByName(
       .select("id, name, sport_id, image_path")
       .eq("active", true)
       .in("id", missingAliasIds.slice(0, PLAYER_LOOKUP_LIMIT));
-    if (extraError) throw new Error(extraError.message);
-    for (const row of extra ?? []) {
-      byId.set(row.id, {
-        id: row.id,
-        name: String(row.name ?? ""),
-        sport_id: String(row.sport_id ?? ""),
-        image_path: row.image_path ?? null,
-      });
+    if (!extraError) {
+      for (const row of extra ?? []) {
+        byId.set(row.id, {
+          id: row.id,
+          name: String(row.name ?? ""),
+          sport_id: String(row.sport_id ?? ""),
+          image_path: row.image_path ?? null,
+        });
+      }
     }
   }
 
