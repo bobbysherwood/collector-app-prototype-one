@@ -52,4 +52,12 @@ describe("formatCatalogSearchError", () => {
       formatCatalogSearchError("canceling statement due to statement timeout")
     ).toBe("The card catalog timed out for this search. Try a more specific query.");
   });
+
+  it("rewrites plpgsql result-type mismatches into a migration instruction", () => {
+    expect(
+      formatCatalogSearchError(
+        "structure of query does not match function result type"
+      )
+    ).toMatch(/064_dm2_cards_search_cast_fix\.sql/);
+  });
 });

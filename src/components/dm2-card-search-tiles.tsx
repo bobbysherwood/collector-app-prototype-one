@@ -80,22 +80,31 @@ export function Dm2CardSearchTiles({
     setLoading(true);
     setError(null);
 
-    searchDm2Cards(debouncedQuery, { page, pageSize }).then((result) => {
-      if (cancelled) return;
+    searchDm2Cards(debouncedQuery, { page, pageSize })
+      .then((result) => {
+        if (cancelled) return;
 
-      setLoading(false);
-      setSearched(true);
+        setLoading(false);
+        setSearched(true);
 
-      if (result.error) {
-        setError(result.error);
+        if (result.error) {
+          setError(result.error);
+          setResults([]);
+          setTotalCount(0);
+          return;
+        }
+
+        setResults(result.cards ?? []);
+        setTotalCount(result.totalCount ?? 0);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoading(false);
+        setSearched(true);
+        setError(err instanceof Error ? err.message : "Card search failed.");
         setResults([]);
         setTotalCount(0);
-        return;
-      }
-
-      setResults(result.cards ?? []);
-      setTotalCount(result.totalCount ?? 0);
-    });
+      });
 
     return () => {
       cancelled = true;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ClipboardList,
   Database,
@@ -47,13 +47,6 @@ interface AdminScreenProps {
 }
 
 export function AdminScreen({ activeSection, children }: AdminScreenProps) {
-  const router = useRouter();
-
-  function selectSection(section: AdminSection) {
-    if (section === activeSection) return;
-    router.push(`/admin?section=${section}`);
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -70,10 +63,9 @@ export function AdminScreen({ activeSection, children }: AdminScreenProps) {
           </p>
           <nav className="space-y-1">
             {NAV_ITEMS.map((item) => (
-              <button
+              <Link
                 key={item.id}
-                type="button"
-                onClick={() => selectSection(item.id)}
+                href={`/admin?section=${item.id}`}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   activeSection === item.id
@@ -83,7 +75,7 @@ export function AdminScreen({ activeSection, children }: AdminScreenProps) {
               >
                 {item.icon}
                 {item.label}
-              </button>
+              </Link>
             ))}
           </nav>
         </aside>

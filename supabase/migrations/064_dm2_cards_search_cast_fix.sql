@@ -1,5 +1,6 @@
--- Player-first card search. The previous haystack formatted every catalog
--- card's players before LIMIT, so a name like "lebron james" timed out.
+-- 062 is already applied in production, but plpgsql RETURN QUERY rejected
+-- varchar card_number (and related text columns) against RETURNS TABLE text.
+-- Re-replace the function with explicit casts. Then Settings → API → reload schema.
 
 create or replace function public.search_dm2_cards(
   query text,

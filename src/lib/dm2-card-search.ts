@@ -55,5 +55,8 @@ export function formatCatalogSearchError(message: string): string {
   if (/timeout|canceling statement/i.test(message)) {
     return "The card catalog timed out for this search. Try a more specific query.";
   }
+  if (/structure of query does not match function result type/i.test(message)) {
+    return "Card catalog search needs a database update. Run supabase/migrations/064_dm2_cards_search_cast_fix.sql in the Supabase SQL editor, then open Settings → API and reload the schema cache.";
+  }
   return message;
 }

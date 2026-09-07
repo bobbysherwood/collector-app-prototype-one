@@ -107,7 +107,8 @@ function Dm2PlayerSearchInput({
     setLoading(true);
     setError(null);
 
-    searchDm2Players(debouncedQuery).then((result) => {
+    searchDm2Players(debouncedQuery)
+      .then((result) => {
       if (cancelled) return;
       setLoading(false);
       setSearched(true);
@@ -118,7 +119,14 @@ function Dm2PlayerSearchInput({
       }
       setResults(result.players ?? []);
       setOpen(true);
-    });
+    })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoading(false);
+        setSearched(true);
+        setError(err instanceof Error ? err.message : "Player search failed.");
+        setResults([]);
+      });
 
     return () => {
       cancelled = true;
@@ -241,7 +249,8 @@ function Dm2SportSearchInput({
     setLoading(true);
     setError(null);
 
-    searchDm2Sports(debouncedQuery).then((result) => {
+    searchDm2Sports(debouncedQuery)
+      .then((result) => {
       if (cancelled) return;
       setLoading(false);
       setSearched(true);
@@ -252,7 +261,14 @@ function Dm2SportSearchInput({
       }
       setResults(result.sports ?? []);
       setOpen(true);
-    });
+    })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoading(false);
+        setSearched(true);
+        setError(err instanceof Error ? err.message : "Sport search failed.");
+        setResults([]);
+      });
 
     return () => {
       cancelled = true;

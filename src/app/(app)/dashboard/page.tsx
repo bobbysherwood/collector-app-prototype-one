@@ -12,6 +12,7 @@ const PortfolioCharts = dynamic(
       default: mod.PortfolioCharts,
     })),
   {
+    ssr: false,
     loading: () => (
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="h-80 animate-pulse rounded-xl bg-muted" />
@@ -24,7 +25,20 @@ const PortfolioCharts = dynamic(
 export default async function DashboardPage() {
   const [aiFeatureSettings, chartData] = await Promise.all([
     getAiFeatureSettings(),
-    getPortfolioChartData(),
+    getPortfolioChartData().catch((error) => {
+      console.error("Failed to load dashboard chart data:", error);
+      return {
+        assets: [],
+        lots: [],
+        sales: [],
+        valuations: [],
+        positions: [],
+        heldLotPositions: [],
+        heldPositions: [],
+        topPerformers: [],
+        underperformers: [],
+      };
+    }),
   ]);
 
   return (
