@@ -65,7 +65,7 @@ export function AdminScreen({ activeSection, children }: AdminScreenProps) {
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.id}
-                href={`/admin?section=${item.id}`}
+                href={`/admin/${item.id}`}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   activeSection === item.id

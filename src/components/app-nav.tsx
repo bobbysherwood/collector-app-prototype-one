@@ -74,6 +74,17 @@ export function AppNav({
                 <span className="hidden sm:inline">Market Research</span>
               </Button>
             ) : null}
+            {isAdmin ? (
+              <Button
+                render={<Link href="/admin/users" />}
+                nativeButton={false}
+                variant="ghost"
+                className="gap-2"
+              >
+                <Shield className="h-4 w-4" />
+                <span className="hidden sm:inline">Admin</span>
+              </Button>
+            ) : null}
           </nav>
         </div>
         <div className="flex items-center gap-3">
@@ -109,7 +120,7 @@ export function AppNav({
                 {isAdmin ? (
                   <DropdownMenuItem
                     className="cursor-pointer"
-                    render={<Link href="/admin" />}
+                    render={<Link href="/admin/users" />}
                   >
                     <Shield className="h-4 w-4" />
                     Admin Screen

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { PortfolioChartsClient } from "@/components/portfolio-charts-client";
+import { PortfolioCharts } from "@/components/portfolio-charts";
 import { PortfolioInsightsLoader } from "@/components/portfolio-insights-loader";
 import { PortfolioInsightsLoading } from "@/components/portfolio-insights-loading";
 import { PortfolioPerformanceLeaders } from "@/components/portfolio-performance-leaders";
@@ -51,7 +51,7 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      <PortfolioChartsClient
+      <PortfolioCharts
         positions={chartData.positions}
         heldLotPositions={chartData.heldLotPositions}
         lots={chartData.lots}

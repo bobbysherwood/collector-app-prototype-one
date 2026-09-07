@@ -17,7 +17,6 @@ import { formatDm2CardResearchTitle } from "@/components/dm2-card-search-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePortalDropdown } from "@/lib/use-portal-dropdown";
 import { formatDm2CardLabel } from "@/lib/dm2-card-to-asset";
 import { cn } from "@/lib/utils";
@@ -410,41 +409,58 @@ export function MarketResearchSearchPanel({
 
   return (
     <div className="rounded-2xl border border-border/80 bg-card shadow-sm overflow-visible">
-      <Tabs value={searchTab} onValueChange={handleTabChange}>
-        <div className="border-b border-border/80 px-4 pt-4">
-          <TabsList variant="line" className="w-full justify-start">
-            <TabsTrigger value="card">Card</TabsTrigger>
-            <TabsTrigger value="player">Player</TabsTrigger>
-            <TabsTrigger value="sport">Sport</TabsTrigger>
-          </TabsList>
+      <div className="border-b border-border/80 px-4 pt-4">
+        <div className="flex w-full justify-start gap-1">
+          {(
+            [
+              ["card", "Card"],
+              ["player", "Player"],
+              ["sport", "Sport"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={cn(
+                "relative inline-flex h-8 items-center justify-center px-3 text-sm font-medium",
+                searchTab === value
+                  ? "text-foreground after:absolute after:inset-x-0 after:bottom-[-1px] after:h-0.5 after:bg-foreground"
+                  : "text-foreground/60 hover:text-foreground"
+              )}
+              onClick={() => handleTabChange(value)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+      </div>
 
-        <div className="px-4 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div className="flex-1 min-w-0">
-              <TabsContent value="card" className="mt-0">
-                <Dm2CardSearchTiles
-                  key={`market-card-search-${searchSession}`}
-                  className="w-full"
-                  inputClassName="bg-background"
-                  placeholder="Search players, sets, cards, or parallels…"
-                />
-              </TabsContent>
-              <TabsContent value="player" className="mt-0">
-                <Dm2PlayerSearchInput
-                  key={`market-player-search-${searchSession}`}
-                  className="w-full"
-                  onSelectPlayer={handleSelectPlayer}
-                />
-              </TabsContent>
-              <TabsContent value="sport" className="mt-0">
-                <Dm2SportSearchInput
-                  key={`market-sport-search-${searchSession}`}
-                  className="w-full"
-                  onSelectSport={handleSelectSport}
-                />
-              </TabsContent>
-            </div>
+      <div className="px-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <div className="flex-1 min-w-0">
+            {searchTab === "card" ? (
+              <Dm2CardSearchTiles
+                key={`market-card-search-${searchSession}`}
+                className="w-full"
+                inputClassName="bg-background"
+                placeholder="Search players, sets, cards, or parallels…"
+              />
+            ) : null}
+            {searchTab === "player" ? (
+              <Dm2PlayerSearchInput
+                key={`market-player-search-${searchSession}`}
+                className="w-full"
+                onSelectPlayer={handleSelectPlayer}
+              />
+            ) : null}
+            {searchTab === "sport" ? (
+              <Dm2SportSearchInput
+                key={`market-sport-search-${searchSession}`}
+                className="w-full"
+                onSelectSport={handleSelectSport}
+              />
+            ) : null}
+          </div>
 
             <Button variant="outline" className="gap-2 sm:w-auto shrink-0" disabled>
               <SlidersHorizontal className="h-4 w-4" />
@@ -494,7 +510,6 @@ export function MarketResearchSearchPanel({
             </div>
           )}
         </div>
-      </Tabs>
     </div>
   );
 }
