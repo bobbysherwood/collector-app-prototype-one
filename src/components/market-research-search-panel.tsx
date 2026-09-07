@@ -68,6 +68,7 @@ function CatalogSearchField({
       <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input
         className={SEARCH_INPUT_CLASS}
+        name="q"
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -85,15 +86,23 @@ function CatalogSearchField({
 function Dm2PlayerSearchInput({
   onSelectPlayer,
   className,
+  initialQuery = "",
+  initialResults = [],
+  initialError = null,
 }: {
   onSelectPlayer: (player: Dm2PlayerSearchResult) => void;
   className?: string;
+  initialQuery?: string;
+  initialResults?: Dm2PlayerSearchResult[];
+  initialError?: string | null;
 }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Dm2PlayerSearchResult[]>([]);
+  const [query, setQuery] = useState(initialQuery);
+  const [results, setResults] = useState<Dm2PlayerSearchResult[]>(initialResults);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(initialError);
+  const [searched, setSearched] = useState(
+    initialQuery.trim().length >= 2 || initialResults.length > 0 || Boolean(initialError)
+  );
 
   const debouncedQuery = useDebouncedValue(query.trim(), 300);
   const canSearch = debouncedQuery.length >= 2;
@@ -138,7 +147,8 @@ function Dm2PlayerSearchInput({
   }, [debouncedQuery, canSearch]);
 
   return (
-    <div className={cn("space-y-1", className)}>
+    <form method="get" action="/market-research" className={cn("space-y-1", className)}>
+      <input type="hidden" name="tab" value="player" />
       <CatalogSearchField
         value={query}
         onChange={setQuery}
@@ -146,14 +156,17 @@ function Dm2PlayerSearchInput({
         loading={loading}
         expanded={showResults}
       />
+      <button type="submit" className="text-sm font-medium text-primary hover:underline">
+        Search
+      </button>
 
       {showResults ? (
         <div className="rounded-lg border border-border bg-popover py-1 shadow-md">
           <ul className="max-h-72 overflow-y-auto" role="listbox">
             {results.map((row) => (
               <li key={row.id} role="option">
-                <button
-                  type="button"
+                <Link
+                  href={`/market-research/players/${row.id}`}
                   className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                   onClick={() => {
                     setQuery(row.player);
@@ -169,7 +182,7 @@ function Dm2PlayerSearchInput({
                       {row.cardCount} card{row.cardCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
@@ -186,25 +199,33 @@ function Dm2PlayerSearchInput({
       ) : null}
       {!canSearch && query.trim().length > 0 ? (
         <p className="text-sm text-muted-foreground">
-          Type at least 2 characters to search.
+          Type at least 2 characters to search. Press Enter if results do not appear.
         </p>
       ) : null}
-    </div>
+    </form>
   );
 }
 
 function Dm2SportSearchInput({
   onSelectSport,
   className,
+  initialQuery = "",
+  initialResults = [],
+  initialError = null,
 }: {
   onSelectSport: (sport: Dm2SportSearchResult) => void;
   className?: string;
+  initialQuery?: string;
+  initialResults?: Dm2SportSearchResult[];
+  initialError?: string | null;
 }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Dm2SportSearchResult[]>([]);
+  const [query, setQuery] = useState(initialQuery);
+  const [results, setResults] = useState<Dm2SportSearchResult[]>(initialResults);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(initialError);
+  const [searched, setSearched] = useState(
+    initialQuery.trim().length >= 2 || initialResults.length > 0 || Boolean(initialError)
+  );
 
   const debouncedQuery = useDebouncedValue(query.trim(), 300);
   const canSearch = debouncedQuery.length >= 2;
@@ -249,7 +270,8 @@ function Dm2SportSearchInput({
   }, [debouncedQuery, canSearch]);
 
   return (
-    <div className={cn("space-y-1", className)}>
+    <form method="get" action="/market-research" className={cn("space-y-1", className)}>
+      <input type="hidden" name="tab" value="sport" />
       <CatalogSearchField
         value={query}
         onChange={setQuery}
@@ -257,14 +279,17 @@ function Dm2SportSearchInput({
         loading={loading}
         expanded={showResults}
       />
+      <button type="submit" className="text-sm font-medium text-primary hover:underline">
+        Search
+      </button>
 
       {showResults ? (
         <div className="rounded-lg border border-border bg-popover py-1 shadow-md">
           <ul className="max-h-72 overflow-y-auto" role="listbox">
             {results.map((row) => (
               <li key={row.sport} role="option">
-                <button
-                  type="button"
+                <Link
+                  href={`/market-research/markets/${resolveResearchSport(row.sport)?.slug ?? slugifyResearchValue(row.sport)}`}
                   className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                   onClick={() => {
                     setQuery(row.sport);
@@ -278,7 +303,7 @@ function Dm2SportSearchInput({
                       {row.cardCount} card{row.cardCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
@@ -295,10 +320,10 @@ function Dm2SportSearchInput({
       ) : null}
       {!canSearch && query.trim().length > 0 ? (
         <p className="text-sm text-muted-foreground">
-          Type at least 2 characters to search.
+          Type at least 2 characters to search. Press Enter if results do not appear.
         </p>
       ) : null}
-    </div>
+    </form>
   );
 }
 
@@ -319,12 +344,20 @@ interface MarketResearchSearchPanelProps {
   activeTab: "card" | "player" | "sport";
   selection: MarketResearchSearchSelection | null;
   onSelectionChange: (selection: MarketResearchSearchSelection | null) => void;
+  initialQuery?: string;
+  initialPlayers?: Dm2PlayerSearchResult[];
+  initialSports?: Dm2SportSearchResult[];
+  initialSearchError?: string | null;
 }
 
 export function MarketResearchSearchPanel({
   activeTab,
   selection,
   onSelectionChange,
+  initialQuery = "",
+  initialPlayers = [],
+  initialSports = [],
+  initialSearchError = null,
 }: MarketResearchSearchPanelProps) {
   const router = useRouter();
   const [searchSession, setSearchSession] = useState(0);
@@ -400,6 +433,9 @@ export function MarketResearchSearchPanel({
                   key={`market-player-search-${searchSession}`}
                   className="w-full"
                   onSelectPlayer={handleSelectPlayer}
+                  initialQuery={activeTab === "player" ? initialQuery : ""}
+                  initialResults={activeTab === "player" ? initialPlayers : []}
+                  initialError={activeTab === "player" ? initialSearchError : null}
                 />
               </div>
             ) : null}
@@ -410,6 +446,9 @@ export function MarketResearchSearchPanel({
                   key={`market-sport-search-${searchSession}`}
                   className="w-full"
                   onSelectSport={handleSelectSport}
+                  initialQuery={activeTab === "sport" ? initialQuery : ""}
+                  initialResults={activeTab === "sport" ? initialSports : []}
+                  initialError={activeTab === "sport" ? initialSearchError : null}
                 />
               </div>
             ) : null}

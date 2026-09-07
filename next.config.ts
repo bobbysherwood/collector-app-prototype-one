@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Bump when a production CDN/WAF caches a stale hashed chunk.
+  generateBuildId: async () => "20260907-js403",
   experimental: {
     serverActions: {
       bodySizeLimit: "300mb",

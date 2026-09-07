@@ -33,7 +33,10 @@ export function AppNav({
     pathname === "/cards/new" || /^\/cards\/[^/]+\/edit$/.test(pathname);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/80 bg-card/90 shadow-sm backdrop-blur-md">
+    <header
+      data-shell="app-nav-20260907"
+      className="sticky top-0 z-50 border-b border-border/80 bg-card/90 shadow-sm backdrop-blur-md"
+    >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-8">
           <Link href="/dashboard" className="flex items-center gap-3">

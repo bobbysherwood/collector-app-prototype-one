@@ -6,12 +6,24 @@ import { Bell, Bookmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MarketResearchSearchPanel } from "@/components/market-research-search-panel";
-import type { MarketResearchSearchSelection } from "@/types/data-model-v2";
+import type {
+  Dm2PlayerSearchResult,
+  Dm2SportSearchResult,
+  MarketResearchSearchSelection,
+} from "@/types/data-model-v2";
 
 export function MarketResearchMockup({
   activeTab,
+  initialQuery = "",
+  initialPlayers = [],
+  initialSports = [],
+  initialSearchError = null,
 }: {
   activeTab: "card" | "player" | "sport";
+  initialQuery?: string;
+  initialPlayers?: Dm2PlayerSearchResult[];
+  initialSports?: Dm2SportSearchResult[];
+  initialSearchError?: string | null;
 }) {
   const [selection, setSelection] = useState<MarketResearchSearchSelection | null>(
     null
@@ -59,6 +71,10 @@ export function MarketResearchMockup({
         activeTab={activeTab}
         selection={selection}
         onSelectionChange={setSelection}
+        initialQuery={initialQuery}
+        initialPlayers={initialPlayers}
+        initialSports={initialSports}
+        initialSearchError={initialSearchError}
       />
     </div>
   );
